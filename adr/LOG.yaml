@@ -14,3 +14,1225 @@
 #   platform_status: proposed
 #
 # INDEX.yaml is generated from this file — do not edit INDEX.yaml by hand.
+
+- id: ADR-0001
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-04-24'
+  tags: [architecture, frontend, web-components, shell, contract, auth, layering]
+  title: Pod components are Web Components, not Module Federation or in-process React
+  decision: >
+    Each Pod delivers its product as a native browser Custom Element with the
+    Pod's declared `component_tag` (e.g. `lv-core`, `lv-masn`, `lv-biology`).
+    The shell hosts the element via React, passes auth state through
+    JavaScript-property setters that re-render the Pod's React tree on
+    assignment, and uses Light DOM (no Shadow DOM) so the shell's Tailwind
+    tokens cascade in. The contract is the same whether the Pod's component
+    is bundled with the shell or fetched at runtime. Pod = one person + one
+    product + one component (per the canonical model in
+    `~/git/digital-systems/about/index.html`; data in
+    `~/git/digital-systems/pods/pods.yaml`).
+  because: >
+    Web Components give us the Pod-ownership boundary the model requires
+    (clear interface, no accidental shell internals leaking into Pods,
+    contract enforced by the platform) without committing to Module
+    Federation or runtime-loaded ES modules until that independence is
+    actually being used (see ADR-0002). The auth-as-setters rule is
+    load-bearing: assigning `el.user = newUser` must trigger a re-render
+    inside the Pod, otherwise token refresh and sign-out break silently —
+    a plain field or `attributeChangedCallback` does not propagate to the
+    Pod's separate React tree. Light DOM (see ADR-0003) is required so a
+    single Tailwind config (the shell's) governs visual consistency;
+    Shadow DOM would force every Pod to bundle its own styles and design
+    tokens would drift across Pods. Per Conway's Law, the architectural
+    boundary between Pods (web components) is intentionally identical to
+    the organizational boundary (one Pod = one accountable person).
+  rejected:
+    - alt: In-process React components (each Pod exports a React component, shell lazy-imports it).
+      because: >
+        Cheapest option, but no enforced boundary — Pods can reach into shell
+        internals (context, hooks, utilities) and the contract erodes through
+        ordinary `import` statements. Refactoring to enable independent
+        deploys later means rewriting every Pod, not flipping a build switch.
+    - alt: Vite Module Federation.
+      because: >
+        Couples the architecture to a specific bundler plugin and its
+        lifecycle. The Custom Elements API is a browser standard; Module
+        Federation is a bundler concern. Same independent-deploy outcome
+        (see ADR-0002 stage 3), more dependencies, more failure modes.
+    - alt: iframes.
+      because: >
+        Strongest isolation, but breaks shared layout, shared auth context,
+        keyboard focus, and accessibility. Wrong tool for in-app Pods that
+        share a surface.
+  related: [ADR-0002, ADR-0003, ADR-0004, SHELL-2026-0001]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0002
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-04-24'
+  tags: [architecture, frontend, shell, deploy, layering, evolution]
+  title: Pods ship in three stages; the contract is written for stage 3 from day one
+  decision: >
+    Pod surfaces progress through three shipping stages:
+      1. Bundled — pnpm/turbo monorepo, one package per Pod (`@landvault/pod-<name>`),
+         shell imports them.
+      2. Versioned package — each Pod publishes a versioned npm package to a
+         private registry; shell bumps versions to deploy a Pod.
+      3. Runtime-loaded ES module — each Pod deploys its bundle to a CDN; the
+         shell fetches the script by URL at runtime and the Pod registers its
+         custom element on load.
+    All Pods start at stage 1. The Pod contract assumes stage 3 from day one:
+    no importing shell internals from a Pod, auth flows only via element
+    properties (never shared React context), no shared React tree across the
+    boundary. Promotion stage 1 → 2 → 3 is a build/deploy change, not a
+    rewrite.
+  because: >
+    Independent deploy is the eventual goal, not the immediate one. Today the
+    LandVault product team is small and bundling Pods with the shell costs
+    nothing. But if the contract is written for the bundled case (Pods import
+    shell helpers, share React context, depend on bundle-time constants), the
+    move to stage 2 or 3 becomes a rewrite of every Pod — the work that should
+    be a deploy-pipeline change becomes architectural debt. Writing the
+    contract for stage 3 up front buys flexibility cheaply: the constraints
+    are not onerous at stage 1 (the Web Components contract from ADR-0001
+    enforces most of them automatically) and they collapse the future cost
+    of independence to near zero.
+  rejected:
+    - alt: Independent deploys (stage 3) from day one.
+      because: >
+        Premature. Today there is one Pod (the demo) and one team. Standing
+        up CDN deploys, version negotiation, and a runtime loader before any
+        Pod actually ships independently is over-engineering — pay the cost
+        when the constraint binds, not before.
+    - alt: Bundled pods with no future-proofing in the contract.
+      because: >
+        Cheapest now, most expensive later. Without the stage-3 constraints,
+        Pods will accumulate shell-coupling that has to be unwound to ever
+        deploy independently. We have explicit reason to expect that day will
+        come (Pod-team autonomy is a stated goal), so paying now is rational.
+    - alt: Single Pod-per-repo from day one (skip stage 1).
+      because: >
+        Fragments the codebase before there is enough Pod work to justify
+        per-repo overhead (CI, releases, dependency updates, code search).
+        Stage 1 keeps the repo single while still enforcing the package
+        boundary; teams can split out repos when the friction shows up.
+  related: [ADR-0001, SHELL-2026-0001]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0004
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-04-26'
+  tags: [architecture, frontend, web-components, shell, contract, auth, layering, miam]
+  title: Pod auth contract carries four properties; entry gated on claims spec
+  decision: >
+    Specify a four-property Pod auth contract — `person` (MiraTerraUser),
+    `activePersona` (ActivePersona), `organizations` (MiraTerraOrganization[]),
+    and `accessToken` (string) — propagated to each Pod's web component as
+    JS-property setters per ADR-0001. The shell gates Pod rendering on a
+    declared list of claim predicates over the resolved identity; if any
+    predicate fails, the shell mounts a non-Pod onboarding state machine that
+    runs to validity or sign-out. Org capabilities (invite rights, Pod
+    access) attach to the Org's `activities` set (multi-valued, what the Org
+    does on the platform), not to its `structure` (single-valued, legal form).
+  because: >
+    MIAM models identity as one Person with many Personas across many
+    Organizations, acting through one Persona at a time, with Org capabilities
+    determined by activity not structure. The seeding shell auth flow
+    (illustrated by ADR-0001's auth-flow paragraph and inherited from
+    landvault-web's Supabase-flavored pattern) carried only `user` and
+    `accessToken` — implicitly assuming a single Org per user and conflating
+    activity with structural type. Building Pods on that contract would
+    foreclose every multi-Persona, multi-Org, and activity-routed scenario
+    MIAM is designed to express. Codifying the four properties, the claims
+    gate, and the activity-keyed capability model now means future Pods
+    inherit a contract that survives MIAM's landing without refactor.
+
+    The setter mechanism (assigning a property triggers a re-render) is
+    unchanged from ADR-0001. This ADR enumerates which properties exist;
+    ADR-0001 governs how they propagate.
+  rejected:
+    - alt: Single-property auth context (carry only `user`).
+      because: >
+        Forecloses multi-Persona scenarios at the contract level. Every Pod
+        wanting to scope a query to "the active Org" would either reach into
+        `user.organizations[0]` (which silently breaks for multi-Persona
+        users) or invent its own Persona-resolution code. The shell becomes
+        the thing that ruins MIAM's flexibility for every Pod downstream.
+    - alt: ADR-0001 in-place edit (modify the auth-flow paragraph).
+      because: >
+        ADR-0001's decision (auth via JS-property setters) is unchanged. The
+        auth-flow paragraph there was illustrative ("user + accessToken" as
+        example fields), not the specific-fields decision. A new ADR is more
+        accurate than mutating ADR-0001 for content that was never
+        load-bearing in its decision text.
+    - alt: ADR-0004 supersedes ADR-0001 entirely.
+      because: >
+        Overstates the change. ADR-0001's setter-mechanism decision is fully
+        in force; ADR-0004 builds on it. Marking ADR-0001 as superseded
+        would imply its mechanism is no longer authoritative, which is wrong.
+  related: [ADR-0001, ADR-0002, ADR-0003, SHELL-2026-0013, LV-2026-0010, LV-2026-0011]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0005
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-03'
+  tags: [architecture, frontend, shell, contract, events, bus]
+  title: ShellBus is the single typed communication channel between the shell and pods
+  decision: >
+    All shell ↔ pod and inter-shell-component communication is routed through a
+    single `ShellBus` singleton (a typed `EventTarget` wrapper) whose full event
+    map is declared in `src/shell-bus.ts` — the single source of truth for every
+    event name and payload shape. No other mechanism (prop callbacks, shared
+    module imports, direct DOM events) may carry shell ↔ pod messages.
+  because: >
+    Without a typed event bus, shell components and pods communicate via
+    ad-hoc prop drilling, direct module imports, or untyped DOM events — each
+    of which erodes the pod isolation contract required by ADR-0001/0002 for
+    future stage-3 independence. The typed event map enforces payload contracts
+    at compile time: every emitter and subscriber agree on shape, and adding a
+    new event requires exactly one entry in one file. The singleton is
+    consistent with the stage-1 bundled constraint from ADR-0002 and trivially
+    replaceable with a postMessage bridge or websocket relay when pods move to
+    stage 3.
+  rejected:
+    - alt: Direct prop callbacks from shell to pod.
+      because: >
+        Requires the shell to know and maintain typed references to each pod's
+        internal API. Breaks the stage-3 contract immediately — props cannot
+        cross a separate-bundle boundary.
+    - alt: Untyped DOM CustomEvents.
+      because: >
+        No TypeScript payload guarantees. Event names are stringly typed;
+        payload drift goes undetected until runtime.
+    - alt: Shared React Context consumed by pods.
+      because: >
+        Pods must not consume shell React Context per ADR-0001's stage-3
+        constraint. A context-based approach permanently prevents stage-3
+        independence.
+  related: [ADR-0001, ADR-0002, SHELL-2026-0009]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0006
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-03'
+  tags: [architecture, frontend, shell, gabe, ai, contract, events, bus]
+  title: Pod ↔ Gabe communication uses gabe:prompt / gabe:message bus events with requestId correlation
+  decision: >
+    Pods interact with Gabe exclusively via two ShellBus events:
+    `gabe:prompt` (pod → shell, carrying `requestId`, `prompt`, and an optional
+    `context` block with pod state and `actions` array) and `gabe:message`
+    (shell → pod, carrying `requestId`, `role`, `content`, and `done` flag).
+    Pods must not call the Gabe service directly. The `requestId` field is
+    mandatory in both events to allow pods to route concurrent in-flight
+    requests to the correct handler.
+  because: >
+    Without a contract, each pod would invent its own Gabe invocation pattern,
+    leading to inconsistent streaming, missed correlation on concurrent calls,
+    and no shared context injection. The `requestId` field is load-bearing:
+    a pod may fire a normal (visible) Gabe call and a silent background call
+    simultaneously — only the requestId distinguishes which response belongs
+    to which. The `context` block lets a pod teach Gabe domain-specific state
+    without modifying a shared system prompt; `actions` declare structured
+    outputs Gabe may produce for the pod. Routing through the bus preserves
+    ADR-0001/0002's stage-3 contract (no direct service import from a pod).
+  rejected:
+    - alt: Direct Gabe service import from pods.
+      because: >
+        Breaks stage-3 independence. A pod importing `gabeService.ts` from the
+        shell bundle cannot be extracted to a separate deploy without rewriting
+        every Gabe-aware pod.
+    - alt: Pod-to-agent HTTP calls (pods call the Gabe backend directly).
+      because: >
+        Cross-origin auth complexity, each pod manages its own token, no shared
+        context injection, and no shell visibility into what a pod is sending
+        to Gabe. Bypasses bus typing entirely.
+    - alt: Single `gabe:response` event shared across all pods (no requestId).
+      because: >
+        Every pod receives every response regardless of origin. Silent calls
+        (ADR-0011) and concurrent visible prompts produce unrouteable
+        response fragments.
+  related: [ADR-0005, ADR-0011, SHELL-2026-0009]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0007
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-03'
+  tags: [architecture, frontend, shell, registry, pods, contract, auth]
+  title: Shell registry owns pod metadata and access predicates; pods self-register via import
+  decision: >
+    A single `pods: readonly PodRegistration[]` array in `src/registry.ts` is
+    the authoritative list of every pod the shell knows about. Each
+    `PodRegistration` declares the pod's `id`, `component_tag`, `route`,
+    `label`, and an optional `access` predicate (activity, structure, and/or
+    role dimensions from ADR-0004). Pods register by (a) adding an entry to
+    this array and (b) adding a side-effect import in `main.tsx` that calls
+    `customElements.define`. The shell's `filterAccessiblePods` helper filters
+    the array at render time against the authenticated Persona's claims.
+  because: >
+    Without a central registry the shell has no way to drive sidebar navigation,
+    route generation, and access-predicate filtering from a single source of
+    truth. Distributing registration across pod files (e.g. each pod auto-
+    registering to some global) makes the full pod list invisible to the shell
+    at build time and impossible to type-check. The two-step registration
+    (registry entry + main.tsx import) is deliberate: it separates the
+    declarative metadata from the imperative custom-element bootstrap, keeping
+    registry.ts free of side effects and importable in tests without triggering
+    DOM registration.
+  rejected:
+    - alt: Auto-discovery via glob import (shell scans pods/ and loads all custom elements).
+      because: >
+        The set of pods the shell ships is a deliberate product decision, not
+        a directory listing. Auto-discovery makes it impossible to have a pod
+        file present but not yet registered (e.g. a WIP pod or a pod gated on
+        feature flags). It also breaks stage-3 independence: a runtime-loaded
+        pod cannot be discovered by a build-time glob.
+    - alt: Each pod registers itself to a global at import time.
+      because: >
+        Mixes metadata (what the pod is, what access it requires) with the
+        imperative DOM bootstrap call. Registry entries become untestable
+        without triggering custom element registration. The full pod list is
+        no longer readable without executing side effects.
+  related: [ADR-0001, ADR-0002, ADR-0004, SHELL-2026-0006, SHELL-2026-0010]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0009
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-03'
+  tags: [architecture, frontend, shell, notifications, bus, contract]
+  title: toast:show ShellBus event is the only channel for pod transient notifications
+  decision: >
+    Pods that need to surface a transient notification to the user must emit a
+    `toast:show` event on the ShellBus with a `message` string and optional
+    `variant` and `duration`. The shell's `ToastContainer` component is the
+    sole subscriber and renderer of toasts. Pods must not render their own
+    notification UI (toast, banner, alert overlay).
+  because: >
+    Without a shared notification surface, each pod implements its own
+    toast/banner/alert, producing visually inconsistent notifications and
+    competing stacking strategies. Routing all notifications through the bus
+    means design and behaviour decisions (stacking order, auto-dismiss timing,
+    accessibility announcements) are made once in `ToastContainer` and apply
+    universally. Pods that render their own notifications also break the
+    stage-3 contract (they would need to reach into shell layout/z-index
+    context).
+  rejected:
+    - alt: Pod-rendered toasts (each pod appends its own toast surface).
+      because: >
+        Visual inconsistency across pods, competing z-index and stacking logic,
+        no single dismiss/stack policy. Also violates the shell-renders-chrome
+        principle from ADR-0001.
+    - alt: React Portal from pods.
+      because: >
+        Pods cannot use React Portals without access to the shell's React tree,
+        which violates ADR-0001's stage-3 contract.
+    - alt: Browser-native Notifications API.
+      because: >
+        Requires permission grant, appears outside the browser tab, and is
+        inappropriate for in-app transient feedback.
+  related: [ADR-0005, ADR-0006, SHELL-2026-0009]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0012
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-04'
+  tags: [architecture, frontend, shell, components, ui, design-system, stabilization]
+  title: All reusable UI components live in the component library; pods and pages consume, never redefine
+  decision: >
+    The shell repository hosts a shared component library under
+    `src/components/{ui,data,forms,layouts,viz}`. This library is the single
+    source of truth for every reusable UI primitive in the LandVault frontend.
+    The rule is:
+      1. Before implementing a UI pattern in a page or pod, check the library.
+      2. If an equivalent component does not exist, create it in the library
+         first, then consume it.
+      3. Pages and pods must not redefine components that already exist in the
+         library, nor define new UI primitives inline — extraction to the
+         library is required first.
+      4. The operative distinction is COMPOSITE vs PRIMITIVE, not "in a pod" vs
+         "in the library":
+           - A pod-specific COMPOSITE — domain logic + layout that is only
+             meaningful inside that pod (e.g. a RuleBuilder bound to a pod's
+             rule schema, a FieldDetailCard) — legitimately lives in the pod.
+           - A generic reusable PRIMITIVE — a Toggle, a Chip, a Select, a Card,
+             a status badge: presentation with no pod-specific domain logic —
+             must live in the library, even if it currently has only one caller.
+         This distinction IS the rule. There is no separate "documented
+         exception" process: if something is a generic primitive it belongs in
+         the library; if it is a pod-specific composite it does not. A composite
+         must still COMPOSE library primitives rather than hand-roll styled
+         markup (raw `<button>/<select>/<input>` with Tailwind classes, raw
+         design-token colour classes) inline.
+      5. There are THREE tiers, not two:
+           - PRIMITIVE — generic, presentation-only. Lives in the library
+             (point 4), even with a single caller.
+           - POD COMPOSITE — domain logic + orchestration meaningful in ONE
+             pod. Lives in `src/pods/<pod>/components/`. Composes primitives.
+           - SHARED DOMAIN COMPOSITE — a pod composite needed by 2+ pods.
+             PROMOTE it to the library (`data/` or `forms/`; the library
+             already holds domain pieces such as `viz/PathogenGauge`). The
+             promotion trigger is the SECOND real consumer, never anticipation:
+             premature shared abstraction is itself the failure mode (the two
+             RuleBuilders have divergent schemas — forcing one shared component
+             early would have been wrong).
+      6. Dependencies flow ONE way; the graph is a DAG, never a mesh:
+           pods/pages ──▶ library ──▶ (leaf)
+           A pod must not import another pod's components (sideways = the
+           isolation break). The library must NEVER import from a pod
+           (that would invert the layer and create a cycle). The shell host
+           orchestrating pods is the only top-level edge (shell-host ──▶ pods)
+           and is not part of the library.
+      7. BOUNDARY: the design-system library is the CATEGORIZED SUBDIRECTORIES
+         of `src/components/` (`ui,data,forms,layouts,viz,map`). The root-level
+         `src/components/*.tsx` files (DashboardLayout, MainLayout, Sidebar,
+         GabePanel, PodComingSoon …) are SHELL CHROME — part of the host, not
+         the library — and may legitimately reference pods. The
+         "library never imports a pod" invariant (point 6) applies to the
+         subdirectories, not the root. The npm extraction (below) extracts the
+         subdirectories only.
+      8. PACKAGING: each library component is a self-contained folder unit
+         (Angular secondary-entry-point style):
+           ui/Button/{Button.tsx, Button.styles.ts, Button.test.tsx, index.ts}
+         The per-component `index.ts` is the canonical public surface
+         (`import { Button } from '.../ui/Button'`) and maps 1:1 to a future
+         `@landvault/ui/button` subpath export. The aggregate category barrel
+         (`ui/index.ts`) is a convenience re-export only; granular per-component
+         imports are preferred (tree-shaking, no cycles). (Tracked by
+         SHELL-2026-0425.)
+    During stabilization, any inline UI component found in pages or pods that
+    belongs in the library should be extracted before the containing feature
+    is considered complete.
+    Enforcement is layered, split by what a machine can decide:
+      - The MECHANICAL subset (raw design-token colour classes, `role="switch"`,
+        bare styled `<button>/<select>/<input>` outside `src/components/`) is
+        deterministically detectable and is guarded by a single ruleset enforced
+        at two moments: a PostToolUse hook that warns in-session on edits under
+        `src/pods/**` and `src/pages/**`, and the same checks as an ESLint rule
+        wired into CI as a merge gate. (Tracked by SHELL-2026-0424.)
+      - The DEPENDENCY-DIRECTION rule (point 6) is the strongest guard and the
+        one that keeps the LIBRARY itself compliant: an import-boundary lint
+        forbids `src/components/{ui,data,forms,layouts,viz,map}` from importing
+        any `src/pods/**` (no library→pod), and forbids any pod from importing
+        another pod's components (no pod→pod). It is near-zero false-positive
+        and runs in the same hook + CI gate. (Tracked by SHELL-2026-0424.)
+      - The JUDGMENT subset ("this composite is really a reusable primitive in
+        disguise") cannot be automated and is caught by a line item in the
+        existing code-review pass. A dedicated review agent is deliberately NOT
+        used: it is the most expensive and least reliable mechanism, runs only
+        when invoked, and the violation volume does not justify it.
+    The library is intentionally structured in five categories:
+      - `ui/`      — atoms and molecules (Button, Badge, KpiCard, StatusPill …)
+      - `data/`    — data-display patterns (DataTable, FilterBar, Timeline …)
+      - `forms/`   — form primitives and containers (Modal, SaveBar, FormSection …)
+      - `layouts/` — spatial composition (ModalLayout, ModuleStack, TwoColumn …)
+      - `viz/`     — data visualisation (RadarChart, GeographicMap, HeatmapGrid …)
+    The library will be extracted to a private npm package (`@landvault/ui` or
+    similar) in a future phase. Every component written to this standard today
+    is directly promotable to the package without rewriting.
+  because: >
+    Without a single source of truth, similar UI patterns proliferate across
+    pods — each implemented slightly differently, diverging from the design
+    system and requiring N fixes when a pattern needs to change. The Light DOM
+    approach (ADR-0003) means pod components share the shell's Tailwind tokens,
+    so a library component renders correctly inside any pod without Shadow DOM
+    or style bundling. Centralising the library in the shell repo at this stage
+    (before the npm extraction) keeps the feedback loop short: library authors
+    and consumers are in the same repo and see breakage immediately.
+    The stabilization rule (extract before ship) prevents the library from
+    drifting out of sync with actual usage — the library reflects what the app
+    actually uses, not what was planned.
+  rejected:
+    - alt: Each pod owns its own component set; no shared library.
+      because: >
+        Violates the single Tailwind config invariant (ADR-0003). Design tokens
+        and interaction patterns diverge per pod, increasing the visual
+        inconsistency surface and the cost of a future design-system update.
+    - alt: Extract the library to a separate repo immediately.
+      because: >
+        Premature at this stage. Cross-repo iteration (change a component, bump
+        the package, update the consumer) slows down a team that is still
+        discovering which abstractions are stable. Co-location is the right
+        tradeoff until the API surface of the library has settled.
+    - alt: Use an external component library (shadcn/ui, Radix, MUI, etc.).
+      because: >
+        LandVault's design language is domain-specific (agronomic data,
+        soil-science visualisations, field maps). Generic libraries cover
+        generic patterns. Domain-specific components (PathogenGauge, NciMatrix,
+        FieldMap) cannot be sourced externally; a hybrid approach creates two
+        import conventions and two styling systems.
+  related: [ADR-0003, ADR-0002]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0014
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-04'
+  tags: [architecture, frontend, shell, registry, pods, nav, mvp, visibility]
+  title: Pod MVP visibility is registry-declared via navVisible; nav and dashboard widgets follow the same flag
+  decision: >
+    Each pod registration in `registry.ts` may carry an optional
+    `navVisible?: boolean` field (default `true` when omitted). When
+    `navVisible` is `false` the pod is hidden from:
+      1. The sidebar nav rail.
+      2. The dashboard widget grid.
+    The flag is the single gating mechanism for MVP scope: pods that are not
+    ready for a release are set to `navVisible: false` in the registry rather
+    than being removed from the codebase. Routes for hidden pods are still
+    registered and accessible by direct URL — `navVisible` controls nav
+    surface visibility only, not routing.
+    In development mode, a dev-only control (slider icon in the sidebar
+    footer) allows per-pod visibility overrides stored in localStorage under
+    the key `lv:dev:nav-visibility`. These overrides are ephemeral and
+    specific to the developer's browser; they have no effect in production
+    builds.
+    For stabilization, the team must review every pod and set `navVisible`
+    explicitly. Pods without a real implementation should be `navVisible: false`.
+    The `comingSoon` flag (which renders a placeholder surface instead of the
+    real web component) is orthogonal: a pod can be `comingSoon: true` and
+    `navVisible: true` simultaneously if the placeholder should be visible in
+    the nav, or `comingSoon: true` and `navVisible: false` if the pod should
+    be entirely hidden until ready.
+  because: >
+    Removing a pod from the registry to hide it from the MVP nav loses the
+    route, the widget registration, and the pod's metadata. It also creates
+    a diff that must be reversed when the pod is reinstated, adding noise to
+    git history. A flag-based approach keeps the full registry intact and
+    makes the MVP surface a one-line change per pod. Coupling nav visibility
+    to dashboard widget visibility ensures the two surfaces never drift out
+    of sync — there is no separate widget visibility list to maintain.
+    The dev-mode override exists because during a hackathon or stabilization
+    sprint developers need to test hidden pods without permanently changing the
+    registry. localStorage is the right scope: per-browser, no deployment
+    required, automatically absent in CI and production.
+  rejected:
+    - alt: Remove non-MVP pods from the registry entirely.
+      because: >
+        Loses route registration, widget metadata, and access predicates.
+        Reverting requires re-adding the full entry, creating noisy diffs and
+        the risk of subtle regressions (e.g. a slightly different route string).
+    - alt: Feature flags via an external service (LaunchDarkly, GrowthBook, etc.).
+      because: >
+        Appropriate for runtime A/B testing of live features, not for
+        development-phase pod gating. Adding an external flag service for
+        pod visibility introduces a network dependency on the nav render path
+        and is disproportionate to the problem.
+    - alt: Separate visibility lists for nav and dashboard widgets.
+      because: >
+        Two lists diverge. A pod toggled off in the nav but left on in the
+        dashboard creates an orphaned widget with no navigation path back to
+        the pod. The single flag eliminates this class of inconsistency.
+  related: [ADR-0007, ADR-0008, ADR-0013]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0015
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-04'
+  tags: [architecture, frontend, shell, pods, data, supabase, api, transitional]
+  title: Pod data access calls Supabase REST directly in stage 1; an API layer replaces this in stage 2
+  decision: >
+    During the stage-1 monorepo spike, pods that need persistent data call
+    the Supabase REST API directly via `fetch`, passing two headers:
+    `apikey: <VITE_SUPABASE_ANON_KEY>` and `Authorization: Bearer <accessToken>`.
+    The `accessToken` from ADR-0004's four-property pod contract is a Supabase
+    JWT, so it authenticates the request and RLS applies automatically.
+    The `@supabase/supabase-js` SDK is explicitly banned in this repo — it
+    cannot parse the `sb_publishable_` anon-key format without throwing a JWT
+    parse error, and direct `fetch` achieves the same result with zero SDK
+    overhead. This direct-to-Supabase pattern is a temporary expedient for
+    the spike phase only. The intended target architecture (stage 2+) is for
+    pods to call a versioned REST or GraphQL API owned by the platform, with
+    Supabase as an implementation detail that pods never see.
+  because: >
+    In stage 1 all pods and the shell share one bundle and one codebase, so
+    a direct Supabase call is the fastest path to real data without spinning
+    up a separate backend service. The `accessToken` is already a valid
+    Supabase JWT (same instance), so RLS enforces data ownership with no extra
+    auth layer. The SDK ban follows from a concrete spike finding: the
+    `@supabase/supabase-js` v2 client internally calls `jwtDecode()` on the
+    anon key at construction time; the `sb_publishable_` format is opaque (no
+    dots), causing an immediate "Expected 3 parts in JWT; got 1" crash.
+    Raw `fetch` avoids this entirely. The stage-2 API layer is the right
+    permanent answer because it decouples pods from the storage backend,
+    allows server-side aggregation and authorisation logic, and prevents pods
+    from acquiring direct database credentials as they gain independence in
+    stage 3.
+  rejected:
+    - alt: Use @supabase/supabase-js in pods.
+      because: >
+        Crashes on sb_publishable_ anon keys (JWT parse error). Even if the
+        SDK is patched, bundling it into every pod adds ~80 kB gzip per pod
+        for functionality that raw fetch already covers.
+    - alt: Stand up a dedicated API service immediately, even in stage 1.
+      because: >
+        Premature for a hackathon spike. A backend service requires deployment,
+        auth middleware, and schema design that would consume the entire sprint.
+        The direct-Supabase approach delivers working data access in one day.
+    - alt: Keep hardcoded sample data permanently.
+      because: >
+        Sample data cannot demonstrate RLS, multi-tenant access, or real
+        agronomic rules. It also trains developers to build against a fixture
+        that diverges from production schema over time.
+  related: [ADR-0001, ADR-0002, ADR-0004]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0017
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-09'
+  tags: [deploy, shell, security, cors, api, frontend, architecture]
+  title: CORS allowed-origins are explicit per tier; wildcards forbidden in production
+  decision: >
+    Every backend the LandVault shell calls must declare an explicit
+    CORS allowed-origins list for each deployment tier (ad-hoc, staging,
+    production). Wildcard origins (`*`) are forbidden in production and staging.
+    Promotion between tiers is gated on a CORS verification check confirming
+    correct headers for the target domain. Each backend team is responsible for
+    maintaining their own CORS configuration; the shell deployment runbook is
+    responsible for verifying it at promotion time.
+  because: >
+    The shell calls multiple independent backends (main API, accounts API,
+    agent/LangGraph API, Stadia Maps). In local dev the Vite proxy eliminates
+    CORS entirely — requests appear same-origin. In production there is no
+    proxy; CORS headers are the only browser-enforced boundary. A wildcard
+    in production allows any origin to call the API with user credentials,
+    eliminating the same-origin protection the browser provides. Without a
+    binding policy across teams, each backend configures CORS independently,
+    with a high probability of inconsistency: some backends blocking the
+    correct domain, others permitting too broadly. Making this an ADR ensures
+    all backend owners treat CORS as a security requirement (not a deployment
+    detail) and establishes the verification gate as a mandatory promotion step.
+  rejected:
+    - alt: Vercel serverless proxy functions for all external API calls.
+      because: >
+        Eliminates all CORS problems (the browser only ever talks to the shell's
+        own domain) but adds latency, Vercel function cold-start overhead, and a
+        maintenance surface for every API the shell calls. Preferred only for
+        APIs with unsolvable CORS constraints (e.g. the dev insights endpoint —
+        see deployment-strategy.md §6).
+    - alt: Wildcard CORS in all tiers including production.
+      because: >
+        Removes the browser's same-origin protection for authenticated API
+        calls. Any page on any domain could make credentialed requests to
+        LandVault APIs on behalf of a logged-in user.
+    - alt: Per-request CORS verification (no gate, fix on failure).
+      because: >
+        CORS failures are silent from the server's perspective and noisy from
+        the browser's. Discovering a CORS misconfiguration after promoting to
+        production means downtime and a rollback. A pre-promotion check costs
+        minutes; a post-promotion incident costs more.
+  related: [ADR-0016, ADR-0004]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0018
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-10'
+  tags: [architecture, frontend, shell, gabe, ai, mcp, tools, events, bus, registry]
+  title: 'MCP tool registry: mcp:register on mount, gabe:tool:call / gabe:tool:result round-trip, namespaced tool names'
+  decision: >
+    Pods that expose callable actions to Gabe must use the MCP tool registry
+    pattern, which consists of three interlocking parts:
+
+    1. Registration (mcp:register).
+       A pod declares its tools by publishing 'mcp:register' on the ShellBus
+       when it mounts. The payload is:
+         { source: string; tools: McpToolDef[] }
+       where McpToolDef is:
+         { name: string; description: string;
+           parameters: { type: 'object';
+                         properties: Record<string, { type: string; description: string }>;
+                         required?: string[] } }
+       'source' is the pod's id. 'tools' is the complete list of actions the
+       pod exposes. A pod re-publishes 'mcp:register' any time its tool set
+       changes; the registry replaces the previous entry for that pod.
+
+    2. Namespacing ({podId}__{toolName}).
+       tool-registry.ts stores tools per pod. When gabeService reads the
+       registry, every tool name is emitted as '{podId}__{toolName}' (double
+       underscore). Gabe receives tool names in this form. When Gabe invokes a
+       tool, useGabeChat.ts parses the namespaced name via parseToolName() to
+       recover podId and actionName before dispatching gabe:tool:call.
+
+    3. Round-trip invocation (gabe:tool:call → gabe:tool:result).
+       When Gabe returns tool_calls, useGabeChat.ts dispatches one
+       'gabe:tool:call' event per call:
+         { source: 'gabe'; callId: string; podId: string;
+           actionName: string; params: Record<string, unknown> }
+       The target pod handles the event, executes the action, then publishes:
+         { source: string; callId: string; result: unknown }
+       useGabeChat.ts correlates by callId, collects all results, calls
+       resumeWithToolResults(), and recurses if Gabe returns further tool_calls.
+       A 5-second timeout per call prevents a non-responsive pod from hanging
+       the chat.
+
+    Two-sided registry access.
+       The write side is bus-mediated: pods publish 'mcp:register' and never
+       call a registry API directly. The read side is a direct import:
+       gabeService.ts (shell infrastructure) imports getAllTools() from
+       tool-registry.ts (also shell infrastructure). This shell-to-shell direct
+       import does not cross the pod boundary and therefore does not violate
+       ADR-0002's stage-3 contract.
+
+    tool-registry.ts location.
+       tool-registry.ts lives at src/shell-infrastructure/tool-registry.ts (or
+       equivalent shell-layer path), not under src/pods/. It is shell
+       infrastructure — it aggregates registrations from all pods and exposes
+       them to gabeService.ts. Placing it under src/pods/ would misrepresent its
+       layer and potentially cause circular imports.
+
+    Singleton ShellBus exception.
+       tool-registry.ts subscribes to 'mcp:register' at module load time using
+       the singleton shellBus import directly (not via useShellBus()). This is
+       the one sanctioned exception to the useShellBus() rule from ADR-0005.
+       The justification: tool-registry.ts is not a React component or hook and
+       has no access to the React tree. The module-level subscription must be
+       established before any pod mounts; a hook call is impossible here. This
+       exception is singular and bounded — only shell infrastructure modules with
+       this exact constraint may use the singleton directly.
+
+    Supersession of the actions array pattern.
+       The 'actions' array on the 'gabe:prompt' event (ADR-0006) is superseded
+       for structured tool invocation. Pods that previously declared actions via
+       'gabe:prompt' should migrate to 'mcp:register' tools. The 'actions' array
+       may be retained for pods that have not yet migrated, but it is deprecated
+       and must not be used in new pod code.
+  because: >
+    The hackathon established that the ADR-0006 actions array is insufficient
+    for structured, multi-step Gabe ↔ pod interaction. The actions array is
+    injected into the user turn as prose context, giving Gabe no machine-
+    readable schema — Gabe can only approximate the call contract. The MCP tool
+    registry pattern replaces this with true structured tool schemas (JSON
+    Schema objects) passed to LangGraph in OpenAI tool format, enabling type-
+    safe parameter extraction and multi-step tool cycles within a single Gabe
+    invocation.
+
+    The bus-mediated write path (mcp:register) preserves the pod isolation
+    contract from ADR-0001/0002: pods never import shell internals and the
+    registry cannot be called directly across a stage-3 bundle boundary.
+
+    The double-underscore namespacing convention ({podId}__{toolName}) prevents
+    tool name collisions when multiple pods register tools with the same local
+    name (e.g. 'search', 'update'). The separator is intentionally not a single
+    underscore or hyphen, which could appear in pod ids or tool names, making
+    parse ambiguity impossible.
+
+    Routing gabe:tool:call through the bus (rather than pod-to-pod) preserves
+    shell visibility: the shell can log, throttle, or reject tool calls without
+    touching pod code. It also means pods do not need to know about each other.
+
+    Placing tool-registry.ts in shell infrastructure rather than src/pods/
+    clarifies the layering: this module exists to serve gabeService.ts (shell),
+    not to participate in the pod lifecycle. The direct getAllTools() import
+    from gabeService.ts is a same-layer call and does not create a coupling that
+    would break stage-3 independence.
+
+    The singleton ShellBus exception is justified on the same grounds as other
+    infrastructure singletons in the shell: a module that must be active before
+    the React tree mounts cannot use hooks. The exception is narrow and
+    explicitly documented here so future shell-infrastructure authors do not
+    extend it without deliberation.
+  rejected:
+    - alt: Pods call a registry API directly instead of emitting mcp:register.
+      because: >
+        A direct API call couples the pod to a concrete shell module export.
+        At stage 3, the pod bundle and the shell bundle are separate; a pod
+        importing shell internals directly is an ADR-0002 violation. The bus
+        event decouples the write path entirely — the pod only knows the event
+        name and payload shape, not who receives it.
+    - alt: Flat tool names (no namespacing) — collision risk.
+      because: >
+        Multiple pods will register tools with common names ('search', 'filter',
+        'update', 'submit'). Without namespacing, the last registrant silently
+        overwrites all earlier ones and Gabe receives an ambiguous tool set.
+        Namespacing eliminates the collision class entirely at the cost of a
+        trivially longer tool name, which Gabe does not surface to the user.
+    - alt: gabe:tool:call routed directly pod-to-pod, bypassing the bus.
+      because: >
+        Pod-to-pod direct calls violate the ADR-0005 routing rule. More
+        concretely, the shell loses visibility into tool invocations: logging,
+        throttling, and error recovery all require the shell to be in the path.
+        Direct pod-to-pod routing also requires each pod to know the identity
+        of other pods, creating a coupling that breaks stage-3 independence.
+    - alt: tool-registry.ts inside src/pods/ (wrong layer).
+      because: >
+        tool-registry.ts is not a pod. It is a shell service that aggregates
+        registrations on behalf of gabeService.ts. Placing it under src/pods/
+        creates a directory-layer lie: future developers would treat it as pod
+        infrastructure, not shell infrastructure. It also risks circular imports
+        (tool-registry.ts importing from pod modules that import from shell modules).
+    - alt: Use useShellBus() hook for the tool-registry subscription instead of the singleton.
+      because: >
+        useShellBus() is a React hook. tool-registry.ts is not a component and
+        never renders. Calling a hook outside the React tree is a rules-of-hooks
+        violation that will throw at runtime. The singleton is the only viable
+        mechanism for a module-level subscription in non-React infrastructure.
+    - alt: Retain the actions array pattern alongside gabe:tool:call (two mechanisms).
+      because: >
+        Two parallel mechanisms for the same capability diverge over time.
+        Pods that use the actions array receive prose-injected action
+        descriptions with no machine-readable schema; pods that use mcp:register
+        receive structured JSON Schema tool definitions. Gabe's response quality
+        differs between the two paths in ways that are invisible to pod
+        developers and confusing to debug. The actions array is deprecated; new
+        code must use mcp:register.
+  related: [ADR-0005, ADR-0006, SHELL-2026-0045, SHELL-2026-0049, SHELL-2026-0050]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0046
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-10'
+  tags: [architecture, frontend, shell, auth, vault, bus, events, localStorage, contract]
+  title: Vault is a shell-side data scope; vaultId propagates via vault:selected ShellBus event, not as a fifth auth property
+  decision: >
+    A vault is a named scope over an organisation's data, orthogonal to
+    persona — a user may switch vault without switching persona and vice versa.
+    The shell chrome owns vault selection. The active vaultId is persisted in
+    localStorage under the key lv:activeVault and cleared on logout and on
+    org/persona switch. Pods that need vaultId subscribe to the vault:selected
+    ShellBus event (payload: { source: 'shell'; vaultId: string }). vaultId
+    is NOT added as a fifth property to the ADR-0004 auth contract.
+  because: >
+    Vault is orthogonal to identity: the same person+persona+org combination
+    can query different vaults. Adding vaultId to the auth contract would
+    conflate a data-scope selection with an identity assertion, forcing every
+    pod to handle or ignore a fifth property even if it never uses vaults.
+    The bus-mediated approach (vault:selected) follows the ADR-0005 opt-in
+    pattern: pods that need vaultId subscribe; pods that don't simply ignore
+    the event. Shell chrome ownership of the vault picker is consistent with
+    the shell-owns-chrome principle from ADR-0001 — a pod initiating vault
+    selection would create coordination problems when multiple pods are
+    simultaneously visible. shell-bus.ts already carries typed vault:selected
+    and vault:updated events in ShellEventMap, indicating prior architectural
+    intent for this propagation approach. localStorage with explicit
+    invalidation (logout, org/persona switch) provides session-like persistence
+    without allowing stale vault state to bleed across org or persona contexts
+    per ADR-0004's multi-org model.
+  rejected:
+    - alt: vaultId as a fifth auth property on the ADR-0004 contract.
+      because: >
+        Conflates identity (who am I) with data scope (which subset am I
+        viewing). All pods would receive vaultId via the setter mechanism
+        whether they use vaults or not. Extending the auth contract is a
+        formal amendment — every pod handling the setter surface would need
+        updates even if vault is irrelevant to their feature.
+    - alt: Pod-initiated vault selection (a pod emits a vault:select:request event).
+      because: >
+        Vault selection is an app-level shell concern, not a pod concern.
+        Pod-initiated selection creates coordination problems when multiple
+        pods are simultaneously visible. Shell chrome ownership is consistent
+        with how all other app-level chrome (sidebar, topbar, persona switcher)
+        is managed.
+    - alt: No localStorage persistence (vault selection resets on page refresh).
+      because: >
+        Vault selection is user intent that survives navigation. Forcing
+        re-selection on every refresh is disruptive. localStorage with explicit
+        invalidation is the correct persistence scope — same pattern as the
+        dev-mode nav visibility override from ADR-0014.
+  related: [ADR-0004, ADR-0005, SHELL-2026-0046, SHELL-2026-0052]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0050
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-16'
+  tags: [architecture, frontend, shell, auth, fetch, services, remotes, security, conventions]
+  title: 'src/config/remotes.ts is the only module that constructs authenticated outgoing HTTP requests'
+  decision: >
+    All authenticated outgoing HTTP requests from shell service files, pod service
+    files, and components must use the authenticatedFetch() function exported from
+    src/config/remotes.ts. No service file, pod file, or component may build its
+    own Authorization header directly or call fetch() with a Bearer token outside
+    of authenticatedFetch(). The function signature is:
+
+      authenticatedFetch(url: string, path: string, token: string,
+                         options?: RequestInit): Promise<Response>
+
+    The token is accepted as a parameter — it is never read from a global store.
+    Callers continue supplying the token from AuthContext as they do today.
+    authenticatedFetch() returns the raw Response; response parsing, error mapping,
+    and retry logic remain in the individual service files.
+
+    authFetch.ts (the header-builder module) may remain for non-fetch use cases but
+    is not the authoritative path for outgoing authenticated requests. External pods
+    (separate bundle repos) cannot import shell internals and are out of scope; they
+    are tracked in SHELL-2026-0187.
+
+    Scope boundary: this ADR covers authenticated outgoing HTTP requests (fetch()
+    calls that attach a Bearer token). Browser navigation redirects
+    (window.location.replace, window.location.href, router navigation) are out of
+    scope. Code that redirects to an accounts service URL for session management
+    (e.g. signOut) reads the URL constant at call time from the env or from
+    remotes.ts as appropriate; it is not required to go through authenticatedFetch().
+  because: >
+    Before PROP-2026-025 (implemented as SHELL-2026-0188 + SHELL-2026-0189), auth
+    header construction was duplicated across productApi.ts, vaultApi.ts,
+    documentUploadService.ts, gabeService.ts, agentApi.ts, and RemotesStatusPanel.tsx
+    using three different patterns: authHeaders(), authInit(), and manual
+    { Authorization: `Bearer ${t}` } spread. There was no single place to inspect,
+    debug, or change how authenticated requests are made. A bug or change in auth
+    header construction required tracing and patching six independent call sites.
+    Centralising in authenticatedFetch() means a single inspection point for all
+    authenticated traffic, a single mock point in tests, and a single place to
+    apply future changes (e.g. adding a trace ID header, swapping token format,
+    logging auth failures). The explicit token parameter keeps the function pure
+    and testable without mocking globals. Keeping response parsing out of
+    authenticatedFetch() preserves the domain logic boundary: each service file
+    knows its own response shapes; remotes.ts knows only how to make an
+    authenticated HTTP request.
+  rejected:
+    - alt: Leave auth header construction in each service file (status quo before PROP-2026-025).
+      because: >
+        Three different patterns across six files with no enforced consistency.
+        A change to auth header format (token type, header name, prefix) requires
+        finding and patching every callsite — with no compile-time guarantee that
+        all were found. A new service author has no signal that there is a
+        canonical pattern and will invent a fourth variant.
+    - alt: Move authenticatedFetch into authFetch.ts alongside the existing header builders.
+      because: >
+        authFetch.ts is a header-builder utility, not a fetch service. Callers
+        that need the header shape (e.g. non-fetch transports) import authFetch.ts.
+        Mixing a fetch() call into a header-builder module conflates transport with
+        header construction and makes the module's responsibility unclear. remotes.ts
+        is the correct home because it already owns all outgoing URL constants —
+        placing the fetch function there makes the transport layer's boundary
+        explicit: remotes.ts owns where you send requests and how you authenticate them.
+    - alt: A dedicated authFetch service module separate from remotes.ts.
+      because: >
+        Splits the URL ownership (remotes.ts) from the fetch ownership (new module),
+        requiring imports from two modules for every authenticated call. remotes.ts
+        is already the single source of truth for outgoing endpoints; co-locating
+        authenticatedFetch there keeps the transport concern in one file.
+  related: [ADR-0004, ADR-0015, ADR-0017, ADR-0048, SHELL-2026-0188, SHELL-2026-0189, SHELL-2026-0190]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0052
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-17'
+  tags: [architecture, frontend, shell, proxy, cors, platform, conventions]
+  title: 'Proxy adapter layer: env.catalog.json PROXIES section drives both dev proxy (Vite) and prod proxy (Edge Function)'
+  decision: >
+    All proxies are declared once in env.catalog.json under a PROXIES section.
+    Each entry maps a path alias to the catalog URL key whose resolved value
+    is the proxy target. Platform-specific proxy config is derived from this
+    declaration — never written by hand.
+
+    Two platform implementations:
+
+    1. Dev proxy (Vite): vite.config.ts reads the PROXIES section at dev server
+       startup and programmatically generates its proxy rules. No proxy rules
+       are hardcoded in vite.config.ts.
+
+    2. Prod proxy (Vercel Edge Function): each entry in PROXIES has a
+       corresponding thin Edge Function file at api/{alias}/[...path].ts. Each
+       file delegates to a shared handler in api/_proxy.ts. The shared handler
+       contains the forwarding logic once: strips the path prefix, resolves the
+       target URL from the env var named in the catalog entry, forwards the
+       Authorization header, and optionally injects additional headers (e.g.
+       X-Api-Key) when the corresponding env var is present.
+
+    Adding a new proxy requires exactly two steps:
+      a. Add one entry to env.catalog.json PROXIES.
+      b. Create one thin Edge Function file delegating to the shared handler.
+    Vite picks up the catalog change automatically at next dev server start.
+
+    This ADR applies to all proxies regardless of purpose — CORS workarounds,
+    API key injection, or any future need. The proxy layer is general-purpose
+    platform infrastructure.
+
+    /insights-api is explicitly out of scope for this ADR. It performs
+    Basic auth injection, which differs from the standard forwarding pattern.
+    It will be addressed separately when BACKEND-2026-0005 (Bearer token
+    migration) is resolved.
+
+    Long-term: when a backend's CORS is correctly configured, its proxy
+    entry is removed from the catalog, its Edge Function is deleted, and
+    callers switch to direct fetch via remotes.ts. The adapter infrastructure
+    remains in place for any proxies that are still needed.
+  because: >
+    Proxies previously had to be declared in two separate places with
+    different formats: vite.config.ts (Vite dev proxy) and vercel.json
+    (Vercel rewrite rules) or as ad-hoc Edge Functions. These are platform
+    services implementing the same intent. Without a single source of truth
+    they drift out of sync silently.
+
+    Vercel rewrite rules were the initial candidate for the prod proxy, but
+    they cannot inject headers (e.g. X-Api-Key). The existing Edge Function
+    at api/landvault/[...path].ts already demonstrates the correct pattern:
+    it is a generic proxy parameterised by environment variables. Extracting
+    its logic into a shared handler makes that pattern reusable with no
+    duplication.
+
+    The catalog is already the single source of truth for backend URLs
+    (ADR-0051). Extending it with a PROXIES section keeps all routing
+    declarations in one version-controlled file.
+  rejected:
+    - alt: vercel.json rewrite rules as the prod proxy.
+      because: >
+        Rewrite rules cannot inject request headers. X-Api-Key and similar
+        server-side-only credentials cannot be forwarded. Edge Functions are
+        strictly more capable and already present in the repo.
+    - alt: One generic catch-all Edge Function at api/[...path].ts routing
+        all proxied paths internally.
+      because: >
+        Vercel Edge Functions are scoped by file path. A single catch-all
+        at api/ would conflict with Vercel's routing model and complicates
+        per-proxy configuration. Thin per-proxy files with a shared handler
+        are clearer and map directly to the catalog entries.
+    - alt: Hardcode proxy rules in vite.config.ts and vercel.json separately,
+        document them as a pair.
+      because: >
+        Documentation does not prevent the two from drifting. The root
+        problem is that there is no single declaration — not that the
+        duplication is undocumented.
+  related: [ADR-0050, ADR-0051, SHELL-2026-0219, BACKEND-2026-0004]
+  carried_from: landvault-management/meta/adr
+
+- id: ADR-0053
+  status: CARRIED
+  origin_status: ratified
+  platform_status: proposed
+  date: '2026-05-29'
+  tags: [architecture, frontend, shell, services, data, insights, catalog, bus, events, contract, authoring, validation, migration, transitional]
+  title: Analyte/field catalog is a shell-owned service; static dictionary now, /meta-backed and bus-distributed later
+  decision: >
+    A single AnalyteCatalog service is the authoritative resolver between three
+    things that are currently conflated: rule analyte ids (e.g. n_denitrification),
+    the /field (and tile) column names that carry their data (pred_n_denitrification,
+    pred_n_denitrification_pct_rank, _upper/_lower), and human-readable English
+    labels. It exposes a stable interface — resolve column to label, resolve analyte
+    to its /field column (applying the naming conventions: pred_ prefix for
+    predictions, _pct_rank when a prediction threshold is expressed as a percentile,
+    _upper/_lower for CI bounds, chemistry analytes used as-is), and list the
+    analytes available for a product.
+
+    Manually authored rule conditions choose their analyte and operator ONLY from the
+    catalog, via constrained selection (dropdown / autocomplete) scoped to the
+    product's available analytes. Freeform analyte entry is removed. An unevaluable
+    rule is therefore unrepresentable at authoring time, not merely detected later.
+
+    The catalog is also the anti-corruption layer for backend naming. The same concept
+    is exposed under different names across sources — e.g. the PMTiles sidecar's
+    _pct_rank versus the insights row schema's _pt_percentile for the percentile-rank
+    of a microbial field (already documented in insightsDictionary.ts), plus
+    inconsistent pred_ prefixing. The catalog normalises these into ONE canonical
+    analyte vocabulary with standard prefixes/suffixes; consumers reference canonical
+    ids only and never the raw source-specific column names. All prefix/suffix
+    construction lives in the catalog and nowhere else.
+
+    Pure resolution logic lives in the shared insights library (src/api/insights/*,
+    already the home of the analyte dictionaries) and is consumed directly by pods,
+    consistent with ADR-0012 (consume shared logic, never redefine). No dependency-
+    injection container or service registry is introduced — services remain plain
+    modules per the current KISS norm. If DI is ever adopted it will be a portfolio-
+    wide change across all services, not scoped to this one.
+
+    The catalog's DATA source is staged, leaving the interface unchanged across the
+    transition:
+
+    1. Now (stage 1): a hard-coded dictionary bundled in the shared library. The
+       naming conventions are encoded once, in the resolver — not scattered across
+       filterColumnFor, the dictionaries, and tile-schema gates as they are today.
+
+    2. Later (stage 2): the shell fetches the catalog from the backend /meta endpoint
+       (SHELL-2026-0333) via remotes.ts — the only module permitted to construct
+       authenticated outgoing requests (ADR-0050) — and distributes it to pods via a
+       new typed ShellBus event analytes:catalog, mirroring the vault:selected
+       propagation of ADR-0046. Pods that need the catalog subscribe; others ignore
+       it. The shell fetches once; pods never fetch /meta independently.
+
+    Rule evaluability — including the Discover /field join — resolves analyte to
+    column through this catalog, NOT through the PMTiles/sidecar tile schema.
+
+    Invariant: every rule, newly authored or pre-existing, references only catalog-
+    accepted analyte ids. Newly authored conditions enforce this by construction
+    (constrained selection above). Existing product rules whose ids or values predate
+    the catalog are reconciled to canonical ids as a migration; an id that cannot be
+    reconciled is surfaced as explicitly unevaluable, never silently dropped.
+  because: >
+    Today the analyte-to-column mapping is split across three places that disagree:
+    the hard-coded analyte dictionaries, the pred_/pct_rank convention baked into
+    filterColumnFor, and the tile/sidecar schema gate in the /field query builder.
+    This produced a silent failure mode (observed on the N-edge demo, SHELL-2026-0386):
+    a rule referencing an analyte absent from the sidecar yields an empty query and a
+    blank/grey map with no error. Consolidating to one resolver with one set of
+    conventions removes that entire failure class and gives both authoring and
+    evaluation a single vocabulary.
+
+    Constraining authored rules to the catalog — rather than validating freeform input
+    after the fact — eliminates the unevaluable-rule class at its source: the analyte
+    is not expressible unless it resolves. And because the backend exposes the same
+    concept under different names across sources (the _pct_rank / _pt_percentile split
+    is already documented in insightsDictionary.ts), a normalisation layer is required:
+    without it every consumer must know which source it is reading and re-derive
+    suffixes ad hoc — which is exactly how the present three-way drift arose.
+
+    The static-now / live-later staging mirrors the accepted evolution pattern of
+    ADR-0015 (stage-1 direct access, stage-2 API layer) and reuses the exact
+    mechanism ADR-0046 chose for new shared pod data: a ShellBus event rather than a
+    wider auth contract. It respects ADR-0050 (only remotes.ts fetches) and ADR-0005
+    (the bus is the channel). Defining the interface now means the grey-map fix and
+    the eventual /meta integration are the same contract, not a rewrite.
+
+    KISS is deliberate: plain-module services are the current norm, and introducing a
+    DI container for a single service would be inconsistent and premature. A typed
+    interface boundary already gives us swappability without a container.
+  rejected:
+    - alt: Keep resolving analyte to column from the PMTiles/sidecar tile schema (status quo).
+      because: >
+        The sidecar omits columns that exist in /field (so valid analytes are
+        silently dropped, yielding a grey map) and falsely advertises others. The
+        tile schema is a rendering detail, not the source of truth for what analytes
+        a product has.
+    - alt: Ship the catalog as bundled static data with no path to a live source.
+      because: >
+        Analyte availability is per-product and owned by the data product. A frozen
+        bundle drifts from the backend and cannot reflect new products without a
+        shell release. The interface must permit a live source even if stage 1 is
+        static.
+    - alt: Introduce a DI container / service registry to inject the catalog into pods.
+      because: >
+        Services are plain modules today (KISS). A one-off container for this service
+        is inconsistent and premature; DI, if ever adopted, is a portfolio-wide
+        decision across all services.
+    - alt: Each pod fetches /meta independently.
+      because: >
+        Duplicates requests, fans out auth and error handling, and contradicts the
+        shell-owns-shared-data precedent of ADR-0046. The shell fetches once and
+        distributes via the bus.
+    - alt: Add the catalog to the ADR-0004 auth contract as an additional property.
+      because: >
+        Same reasoning as ADR-0046: the catalog is shared reference data, not an
+        identity assertion. Bus distribution is the established pattern for shared
+        data that only some pods consume.
+    - alt: Allow freeform analyte entry and validate authored rules at save/runtime.
+      because: >
+        Validation detects an unevaluable rule after it exists; constrained selection
+        prevents it from being authored at all. Runtime validation is kept as defence
+        in depth, but the authoring picker is the primary guard.
+    - alt: Let each consumer apply its own prefix/suffix logic per data source.
+      because: >
+        That is the status quo and the direct cause of the _pct_rank / _pt_percentile
+        drift. Naming normalisation must live in exactly one place — the catalog.
+  related: [ADR-0004, ADR-0005, ADR-0012, ADR-0015, ADR-0046, ADR-0050, SHELL-2026-0333, SHELL-2026-0386, SHELL-2026-0387]
+  carried_from: landvault-management/meta/adr
+
+- id: DRAFT-ADR-0053
+  status: CARRIED
+  origin_status: proposed
+  platform_status: proposed
+  date: '2026-05-26'
+  tags: [architecture, frontend, shell, pods, services, fetch, auth, layering, pod-sdk, di, conventions]
+  title: >
+    Pod backend access goes through an interface-based service layer, wired at
+    runtime via a module-level container and reached only through pod-sdk
+  decision: >
+    Pods access backends through TypeScript service interfaces (OrdersService,
+    ProductService, AccountsService, ...) defined in and re-exported from the
+    pod-sdk barrel. Pods obtain an implementation via a hook (useOrdersService(),
+    etc.) and never construct fetches themselves.
+
+    Implementations (HttpXService, MockXService) live in src/services and are
+    selected ONCE at startup by a composition root in main.tsx:
+    configureServices(VITE_ENV, getAuth). The resolved instances are held in a
+    module-level container (a singleton object, not React Context). React Context
+    is unusable here because each pod is its own React root (ADR-0001) and the
+    pod-sdk barrel excludes ShellBus providers — Context does not cross the pod
+    boundary, which is why shellBus is injected as a property (ADR-0005). A
+    module-level container IS shared across all pod roots (pods load via dynamic
+    import in the same module graph), so it crosses the boundary with no per-pod
+    plumbing and no change to the element auth contract (ADR-0004).
+
+    This ADR AMENDS ADR-0050 on two narrow points and preserves the rest:
+      1. authenticatedFetch() in src/config/remotes.ts REMAINS the sole module
+         that constructs authenticated outgoing requests, and the token REMAINS a
+         parameter to it. What changes: the token is supplied by the shell
+         composition root via an injected auth accessor on each service instance
+         (dependency injection), not threaded by every pod/component call site.
+         This is DI, not a module-global read — remotes.ts still never reads a
+         global, and tests inject a static accessor.
+      2. Response parsing / error mapping moves from each service file into one
+         shared shell-internal helper, mapResponse(), producing a uniform
+         ServiceError. (ADR-0050 had kept mapping in each service file.)
+
+    Neither authenticatedFetch nor mapResponse nor any header-builder is
+    re-exported through pod-sdk: the only backend path reachable from a pod is a
+    service hook. This is enforced, not merely documented, by SHELL-2026-0416
+    (eslint-plugin-boundaries + a no-fetch-in-pods lint wired into pre-commit and
+    CI). This ADR also realises the "stage-2 API layer" anticipated by ADR-0015.
+
+    Full implementation blueprint and migration order: SHELL-2026-0410 and
+    docs/service-layer-design.md (in landvault-shell). Mock-vs-real becomes a
+    single wiring decision in the composition root, retiring the global mirage
+    fetch-intercept domain by domain.
+  because: >
+    Above the ADR-0050 request-construction line, data *consumption* was never
+    standardised: product-optimization wrapped authenticatedFetch ad hoc,
+    opportunity-management still had authInit()+bare-fetch TODO stubs, and
+    discover used raw hooks over services/product/*. Every signature threaded
+    orgId/token and re-derived its own parsing and error handling, and the mirage
+    global intercept made real-vs-mock un-greppable. New pods re-derived access
+    code and agents repeatedly reinvented it.
+
+    The repeated reinvention has a specific cause: the idiomatic React DI tool is
+    Context, Context does not reach into a pod's separate React root, so an agent
+    that reaches for it hits a wall and falls back to an inline fetch. Making the
+    container a module-level singleton exposed only through pod-sdk gives pods one
+    obvious, reachable call (useXService()) — the path of least resistance, hence
+    the one taken. Interface-first keeps pods decoupled from wire shapes and makes
+    environment-swappable implementations (real / mock / future staging) a runtime
+    wiring choice rather than a code change. Crucially, the design is paired with
+    code-level enforcement (SHELL-2026-0416): ADR-0050 and ADR-0012 show that
+    binding rules without enforcement get ignored under time pressure, so the
+    decision is only durable if the wrong path fails the build.
+  rejected:
+    - alt: Provide services via a shell-level React Context / ServicesProvider.
+      because: >
+        Each pod mounts its own React root (ADR-0001); a shell-tree Context
+        provider does not reach pod component trees. This is the exact trap that
+        caused agents to abandon centralisation and inline fetches.
+    - alt: Inject services as a sixth element property alongside the auth contract
+        (the shellBus injection pattern, ADR-0004/0005).
+      because: >
+        Works, but forces every pod to declare another setter and thread the
+        object down — precisely the boilerplate agents skip. A barrel hook keeps
+        the pod's obligation to a single useXService() call. (Property injection
+        remains available later for genuinely per-pod-scoped services if needed.)
+    - alt: Keep ADR-0050 verbatim — callers keep threading the token per call.
+      because: >
+        Preserves purity but leaves orgId/token in every signature and does not
+        remove the consumption-layer duplication. The injected-accessor amendment
+        keeps ADR-0050's token-as-parameter and single-construction-point
+        invariants while removing the per-call-site threading.
+    - alt: Adopt react-query/TanStack now as the data layer.
+      because: >
+        Orthogonal: caching can layer on top of the service interfaces later. The
+        immediate problem is a reachable, enforced, swappable boundary, not cache
+        management. Deferred, not rejected.
+  related: [ADR-0050, ADR-0015, ADR-0012, ADR-0001, ADR-0004, ADR-0005, SHELL-2026-0410, SHELL-2026-0416, PROP-2026-027, PROP-2026-015]
+  carried_from: landvault-management/meta/adr
+  note: "ID collision: landvault-management LOG contains an accepted ADR-0053 (analyte catalog). This draft requires a new ID before ratification. See LVGOV-2026-0004 notes."
