@@ -124,9 +124,11 @@
   carried_from: landvault-management/meta/adr
 
 - id: ADR-0004
-  status: CARRIED
+  status: ratified
   origin_status: ratified
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
   date: '2026-04-26'
   tags: [architecture, frontend, web-components, shell, contract, auth, layering, miam]
   title: Pod auth contract carries four properties; entry gated on claims spec
@@ -541,9 +543,11 @@
   carried_from: landvault-management/meta/adr
 
 - id: ADR-0015
-  status: CARRIED
+  status: ratified
   origin_status: ratified
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
   date: '2026-05-04'
   tags: [architecture, frontend, shell, pods, data, supabase, api, transitional]
   title: Pod data access calls Supabase REST directly in stage 1; an API layer replaces this in stage 2
@@ -594,9 +598,11 @@
   carried_from: landvault-management/meta/adr
 
 - id: ADR-0017
-  status: CARRIED
+  status: ratified
   origin_status: ratified
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
   date: '2026-05-09'
   tags: [deploy, shell, security, cors, api, frontend, architecture]
   title: CORS allowed-origins are explicit per tier; wildcards forbidden in production
@@ -854,9 +860,38 @@
   carried_from: landvault-management/meta/adr
 
 - id: ADR-0050
-  status: CARRIED
+  status: ratified
   origin_status: ratified
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
+  dismissed_objections:
+    - objecting_party: landvault-backend maintainers
+      concern: >
+        The explicit `token: string` parameter on `authenticatedFetch()` forces
+        every call site in every service file to thread the token through its
+        call stack. At scale, this produces significant boilerplate: every service
+        method must accept and forward a token parameter even if it does nothing
+        else with it. A module-level auth accessor (reading the current token from
+        a shared singleton) would eliminate this per-call-site burden without
+        compromising the single-construction-point invariant.
+      dismissal_rationale: >
+        The concern identifies a genuine ergonomic cost but does not prevent
+        ratification of ADR-0050 as written. The immediate problem ADR-0050
+        solves — eliminating six independent auth-header construction patterns
+        across six files — is separable from the token-threading ergonomics. The
+        explicit token parameter is the correct first step because it makes
+        authenticatedFetch() pure and testable without global state, and because
+        a module-global auth accessor introduces its own ordering and lifecycle
+        hazards (singleton read before auth is initialised, test isolation
+        problems) that require a separate design decision. The objecting party's
+        preferred solution (DI-injected auth accessor) is architecturally
+        sound and is addressed in full in ADR-0055, which amends ADR-0050 on
+        exactly this point. Ratifying ADR-0050 now and ADR-0055 immediately after
+        satisfies both the deduplication goal and the ergonomics goal in the
+        correct sequencing. The platform interest in closing six independent
+        auth-header patterns outweighs the per-call-site threading cost for the
+        interim period.
   date: '2026-05-16'
   tags: [architecture, frontend, shell, auth, fetch, services, remotes, security, conventions]
   title: 'src/config/remotes.ts is the only module that constructs authenticated outgoing HTTP requests'
@@ -929,9 +964,11 @@
   carried_from: landvault-management/meta/adr
 
 - id: ADR-0052
-  status: CARRIED
+  status: ratified
   origin_status: ratified
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
   date: '2026-05-17'
   tags: [architecture, frontend, shell, proxy, cors, platform, conventions]
   title: 'Proxy adapter layer: env.catalog.json PROXIES section drives both dev proxy (Vite) and prod proxy (Edge Function)'
@@ -1141,10 +1178,12 @@
   related: [ADR-0004, ADR-0005, ADR-0012, ADR-0015, ADR-0046, ADR-0050, SHELL-2026-0333, SHELL-2026-0386, SHELL-2026-0387]
   carried_from: landvault-management/meta/adr
 
-- id: DRAFT-ADR-0053
-  status: CARRIED
+- id: ADR-0055
+  status: ratified
   origin_status: proposed
-  platform_status: proposed
+  platform_status: ratified
+  ratified_at: '2026-06-10'
+  ratified_by: LandVault Platform Steward
   date: '2026-05-26'
   tags: [architecture, frontend, shell, pods, services, fetch, auth, layering, pod-sdk, di, conventions]
   title: >
@@ -1235,4 +1274,3 @@
         management. Deferred, not rejected.
   related: [ADR-0050, ADR-0015, ADR-0012, ADR-0001, ADR-0004, ADR-0005, SHELL-2026-0410, SHELL-2026-0416, PROP-2026-027, PROP-2026-015]
   carried_from: landvault-management/meta/adr
-  note: "ID collision: landvault-management LOG contains an accepted ADR-0053 (analyte catalog). This draft requires a new ID before ratification. See LVGOV-2026-0004 notes."
