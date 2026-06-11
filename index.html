@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LandVault Governance — Miraterra</title>
+<style>*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #ffffff;
+  color: #1a2030;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  padding: 24px 24px 80px;
+}
+.topnav {
+  max-width: 900px;
+  margin: 0 auto 40px;
+  display: flex;
+  gap: 24px;
+  padding: 14px 18px;
+  background: #ffffff;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.topnav a {
+  color: #5a7a9a;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+.topnav a:hover { color: #2563b0; }
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #5a7a9a;
+  margin-bottom: 12px;
+}
+h1 {
+  font-size: 26px;
+  font-weight: 500;
+  color: #0f1117;
+  letter-spacing: -0.01em;
+  margin-bottom: 12px;
+}
+.subtitle {
+  font-size: 14px;
+  color: #5a6a7a;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6a7a8a;
+  margin: 32px 0 12px;
+}
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 12px;
+  margin: 10px 0 32px;
+}
+.overview-card {
+  display: block;
+  background: #ffffff;
+  border: 1px solid #d8dde3;
+  border-left: 4px solid #5a7a9a;
+  border-radius: 6px;
+  padding: 14px 16px 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.overview-card:hover {
+  border-color: #2563b0;
+  box-shadow: 0 2px 8px rgba(15,17,23,0.07);
+}
+.overview-card.gov  { border-left-color: #2563b0; }
+.overview-card.adr  { border-left-color: #2a8a8a; }
+.overview-card.rfc  { border-left-color: #a04a8a; }
+.overview-card.ref  { border-left-color: #5a7a8a; }
+.overview-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.overview-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a2030;
+}
+.status-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.status-chip.live     { background: #e6f5e8; color: #2a8a3a; }
+.status-chip.proposed { background: #e6eef7; color: #2563b0; }
+.status-chip.planned  { background: #ece9f0; color: #7070a0; }
+.overview-card-desc {
+  font-size: 12px;
+  color: #5a6a7a;
+  line-height: 1.55;
+}
+.about-section {
+  background: #ffffff;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+.about-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5a7a9a;
+  margin-bottom: 14px;
+}
+.about-section p {
+  font-size: 13px;
+  color: #6a7a8a;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.about-section p:last-child { margin-bottom: 0; }
+.about-section code {
+  background: #f5f7fa;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #2563b0;
+  font-size: 12px;
+}
+.vocab-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 4px 20px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.vocab-key {
+  color: #2563b0;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 6px 0;
+}
+.vocab-val {
+  color: #6a7a8a;
+  padding: 6px 0;
+  border-bottom: 1px solid #eef2f7;
+  line-height: 1.5;
+}
+footer {
+  margin-top: 64px;
+  font-size: 11px;
+  color: #6a7a8a;
+  text-align: center;
+}
+footer a { color: #6a7a8a; text-decoration: none; }
+footer a:hover { color: #5a7a9a; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <a href="https://miraterra.github.io/landvault-governance/">Governance</a>
+  <a href="https://miraterra.github.io/digital-systems/">Digital Systems</a>
+</nav>
+<div class="page">
+
+<p class="eyebrow">Miraterra · LandVault Platform</p>
+<h1>Governance Corpus</h1>
+<p class="subtitle">Cross-cutting Architecture Decision Records, the RFC ratification process, and the LandVault Platform Steward role. Instruments acquire authority through RFC ratification, not by assertion.</p>
+
+<h2 class="section-label">Architecture Decision Records</h2>
+<p style="font-size:13px;color:#5a6a7a;margin:-6px 0 12px">Platform-scoped ADRs binding across LandVault repos.</p>
+<div class="overview-grid">
+  <div class="overview-card adr">
+    <div class="overview-card-head">
+      <div class="overview-card-title">ADR Index</div>
+      <span class="status-chip proposed">bootstrapping</span>
+    </div>
+    <div class="overview-card-desc">Compact scan-file of all platform ADRs. Generated from <code>adr/LOG.yaml</code> — filter by <code>platform_status: ratified</code> for binding decisions.</div>
+  </div>
+</div>
+
+<h2 class="section-label">Governance Instruments</h2>
+<p style="font-size:13px;color:#5a6a7a;margin:-6px 0 12px">RFC process, Steward role, and delegated corpus registry.</p>
+<div class="overview-grid">
+  <div class="overview-card gov">
+    <div class="overview-card-head">
+      <div class="overview-card-title">RFC Process</div>
+      <span class="status-chip planned">planned</span>
+    </div>
+    <div class="overview-card-desc">How changes to platform-scoped instruments are proposed, objected to, and ratified.</div>
+  </div>
+  <div class="overview-card gov">
+    <div class="overview-card-head">
+      <div class="overview-card-title">Platform Steward</div>
+      <span class="status-chip planned">planned</span>
+    </div>
+    <div class="overview-card-desc">The role responsible for corpus integrity, objection tracking, and binding-scope enforcement.</div>
+  </div>
+  <div class="overview-card ref">
+    <div class="overview-card-head">
+      <div class="overview-card-title">Delegated Corpus Registry</div>
+      <span class="status-chip planned">planned</span>
+    </div>
+    <div class="overview-card-desc">Registry of repo-scoped governance corpora recognized by Enterprise Governance.</div>
+  </div>
+</div>
+
+<h2 class="section-label">About this corpus</h2>
+<div class="about-section">
+  <h2>Lifecycle statuses</h2>
+  <div class="vocab-grid">
+    <div class="vocab-key">proposed</div>
+    <div class="vocab-val">ADR is open for the objection window. Not yet binding.</div>
+    <div class="vocab-key">ratified</div>
+    <div class="vocab-val">Binding in its declared scope. Imposition prevented by recorded-objection discipline.</div>
+    <div class="vocab-key">superseded</div>
+    <div class="vocab-val">Replaced by a later ADR. See the <code>superseded_by</code> field.</div>
+    <div class="vocab-key">withdrawn</div>
+    <div class="vocab-val">Retracted before ratification.</div>
+    <div class="vocab-key">CARRIED</div>
+    <div class="vocab-val">Ratified at the authoring repo; proposed at platform scope. Cross-repo authority not yet conferred.</div>
+  </div>
+</div>
+<div class="about-section">
+  <h2>SCOPED-binding model</h2>
+  <p>An ADR may carry both an <code>origin_status</code> (e.g., <code>ratified</code>) and a <code>platform_status</code> (e.g., <code>proposed</code>) when it has been ratified within the authoring repository but its authority has not yet been extended across all platform repos.</p>
+  <p>The <code>adr/INDEX.yaml</code> supports filtering by <code>platform_status: ratified</code> to identify decisions that are universally binding.</p>
+</div>
+
+</div>
+<footer>LandVault Governance Corpus · Miraterra</footer>
+</body>
+</html>
