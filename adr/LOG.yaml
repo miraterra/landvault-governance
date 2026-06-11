@@ -1,0 +1,16 @@
+# LandVault Governance Corpus — ADR Log
+#
+# Authoritative record of Architecture Decision Records.
+# Each entry is the full ADR content — title, decision, rationale, and
+# rejected alternatives.
+#
+# Run `make adr-index` after adding or updating an entry.
+#
+# Status values: proposed | ratified | superseded | withdrawn | CARRIED
+#
+# SCOPED-binding: when an ADR is ratified at the authoring repo but not yet
+# at platform scope, include both:
+#   origin_status: ratified
+#   platform_status: proposed
+#
+# INDEX.yaml is generated from this file — do not edit INDEX.yaml by hand.
