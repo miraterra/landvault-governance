@@ -14,6 +14,7 @@ Status values:
     proposed   — open for objection window
     ratified   — binding in its scope
     superseded — replaced by a later ADR (include superseded_by)
+    retired    — ratified ADR retired without a successor; binding force lifted
     withdrawn  — retracted before ratification
     CARRIED    — ratified-at-origin, proposed-at-platform
 
@@ -100,7 +101,7 @@ def main() -> None:
         if not isinstance(entries, list):
             raise SystemExit("LOG.yaml must be a YAML list of ADR entries")
 
-    VALID_STATUSES = {"proposed", "ratified", "superseded", "withdrawn", "CARRIED"}
+    VALID_STATUSES = {"proposed", "ratified", "superseded", "retired", "withdrawn", "CARRIED"}
     for entry in entries:
         status = entry.get("status", "")
         if status not in VALID_STATUSES:
