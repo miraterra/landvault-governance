@@ -142,3 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .cage/
+
+# Claude Code — commit shared settings, ignore local/personal state (matches landvault-shell)
+.claude/settings.local.json
+.claude/worktrees/
