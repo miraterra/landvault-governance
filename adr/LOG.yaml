@@ -1347,9 +1347,16 @@
   status: proposed
   date: '2026-06-19'
   tags: [testing, contract, integration, boundary, schema, steward, conventions]
-  title: Each provider boundary has an independent, steward-owned contract package — one package, two faces
+  title: A provider-driven (data-product) boundary has an independent, steward-owned contract package — one package, two faces
   decision: >
-    For each provider boundary, THE CONTRACT IS A SINGLE INDEPENDENT PACKAGE,
+    SCOPE: this ADR governs PROVIDER-DRIVEN boundaries (data products) as
+    classified by ADR-0060. For consumer-driven boundaries (BFFs) the contract
+    is authored consumer-side and this ADR does not apply — see ADR-0060. The
+    anti-bias machinery below (neutral ownership, spec-derived assertions) is a
+    data-product concern: it exists because a data product has a
+    consumer-independent ground truth to protect; a BFF does not.
+
+    For each provider-driven boundary, THE CONTRACT IS A SINGLE INDEPENDENT PACKAGE,
     versioned on its own and owned by an assigned Steward — not by the provider's
     implementer and not by any consumer's implementer. It is, in effect, a
     conformance kit (TCK) for that boundary.
@@ -1390,10 +1397,12 @@
   rejected:
     - alt: Consumer-driven contract tests owned by the consumer (Pact-style authorship).
       because: >
-        Better than provider-owned, but only RELOCATES the bias — the consumer's
-        implementer still authors the expectations from their own assumptions,
-        and truth scatters across consumers. An independent package with
-        spec-derived assertions removes the implementer from authorship entirely.
+        Rejected FOR DATA PRODUCTS: with many/unknown consumers there is a
+        consumer-independent truth to protect, so consumer authorship only
+        RELOCATES the bias and scatters truth across consumers. NOTE this is the
+        CORRECT pattern for consumer-driven boundaries (BFFs), where the
+        consumer's expectations ARE the ground truth — see ADR-0060. The
+        rejection is scoped to the data-product case this ADR governs.
     - alt: Provider owns and writes its own conformance tests.
       because: >
         Grading your own homework. The test inherits the implementation's
@@ -1406,7 +1415,7 @@
       because: >
         A description each side re-implements is two contracts wearing one name.
         Drift returns. The artifact must be executable and binding on both faces.
-  related: [ADR-0055, ADR-0015, ADR-0050, ADR-0001, ADR-0056, ADR-0058, ADR-0059]
+  related: [ADR-0055, ADR-0015, ADR-0050, ADR-0001, ADR-0056, ADR-0058, ADR-0059, ADR-0060, ADR-0061, ADR-0062]
 
 - id: ADR-0058
   status: proposed
@@ -1460,7 +1469,7 @@
         Slow, and misses structural breaks that tooling catches reliably.
         Reserve human attention for SEMANTIC change (ADR-0059), which tooling
         catches poorly.
-  related: [ADR-0057, ADR-0055, ADR-0050, ADR-0012, ADR-0056, ADR-0059]
+  related: [ADR-0057, ADR-0055, ADR-0050, ADR-0012, ADR-0056, ADR-0059, ADR-0061]
 
 - id: ADR-0059
   status: proposed
@@ -1468,6 +1477,15 @@
   tags: [testing, contract, semantics, property-based, metamorphic, steward, conventions]
   title: Contract semantics are verified in tiers; isolated semantics are the human-reviewed residue
   decision: >
+    SCOPE: the TIERS below apply to verifying meaning at any boundary,
+    regardless of contract direction (ADR-0060). The ANTI-BIAS rationale in the
+    `because` — prefer spec-derived/property-based generation over a human
+    author — is a PROVIDER-DRIVEN (data-product) concern: it removes
+    shared-assumption bias against a consumer-independent truth. At a
+    consumer-driven boundary (BFF) there is no such independent truth, so the
+    consumer authoring the semantic expectations is correct, not a bias to
+    engineer away (ADR-0060).
+
     Conformance must cover MEANING, not only shape. Semantics are verified in
     tiers, applied by risk rather than uniformly:
       1. Refined types / constrained schema EVERYWHERE — formats (ISO-8601),
@@ -1522,4 +1540,156 @@
         becomes a bottleneck. Prefer spec-derived + property-based generation
         (no shared blind spot, actively adversarial), with humans only on the
         residue.
-  related: [ADR-0057, ADR-0058, ADR-0056, ADR-0055]
+  related: [ADR-0057, ADR-0058, ADR-0056, ADR-0055, ADR-0060]
+
+- id: ADR-0060
+  status: proposed
+  date: '2026-06-20'
+  tags: [testing, contract, integration, boundary, bff, data-product, directionality, conventions]
+  title: Contract directionality is determined by boundary type — BFF is consumer-driven, data product is provider-driven
+  decision: >
+    Which side AUTHORS a contract is a property of the boundary, not a global
+    policy. It is decided by consumer cardinality and team coupling (Conway):
+
+      - CONSUMER-DRIVEN (a BFF — one, or few, tightly-coupled consumers, often
+        the same team): the consumer authors the contract; its expectations ARE
+        the spec; the provider is VERIFIED AGAINST them. There is no
+        consumer-independent ground truth, so this is correct authority, not
+        bias. Tooling aligns with the consumer (e.g. Pact-style CDC); the
+        consumer's ADR-0055 MockXService is the proto-contract, and the Pact
+        mock the consumer develops against IS ADR-0057's "face 2" for free.
+        ADR-0057's neutral/independent apparatus does NOT apply here.
+
+      - PROVIDER-DRIVEN (a data product — many or unknown, cross-team
+        consumers): the provider (or a neutral Steward) authors and owns the
+        contract and consumers conform. ADR-0057 governs.
+
+    Classification test: if the boundary exists to serve a specific consumer and
+    would change when that consumer's needs change, it is a BFF (consumer-driven);
+    if it publishes a stable interface many consumers depend on, it is a data
+    product (provider-driven). Worked example: mt-landvault-api is a BFF for the
+    Discover Pod in landvault-shell → consumer-driven.
+  because: >
+    A BFF exists to serve its consumer, so there is no truth beyond "what the
+    consumer needs" — the consumer's expectations are the ground truth, and
+    consumer authorship is correct authority. This is the key scoping result for
+    ADR-0057 and ADR-0059: their anti-bias machinery (neutral ownership,
+    spec-derived/property-based generation to kill shared-assumption bias) exists
+    to protect a consumer-INDEPENDENT truth, which only a data product has. A
+    data product serves many decoupled, cross-team consumers and must guarantee
+    stability, so it cannot bend to any one consumer — provider authority plus a
+    neutral Steward is required. Directionality is simply Conway's law applied to
+    contracts: the contract is owned where the coupling is.
+  rejected:
+    - alt: One global contract direction for every boundary (ADR-0057's implicit assumption).
+      because: >
+        Forces the neutral/independent apparatus onto BFFs where it is ceremony
+        (no independent truth to protect), and would push consumer-driven
+        authorship onto data products where it scatters truth across consumers.
+        Direction must be chosen per boundary.
+    - alt: Classify by transport/technology (REST vs events, sync vs async).
+      because: >
+        Direction follows consumer coupling and cardinality, not protocol. A
+        REST endpoint can be either a BFF or a data product; the transport does
+        not decide.
+  related: [ADR-0057, ADR-0059, ADR-0056, ADR-0055, ADR-0001, ADR-0007, ADR-0061, ADR-0062]
+
+- id: ADR-0061
+  status: proposed
+  date: '2026-06-20'
+  tags: [testing, contract, ci, enforcement, independence, governance, conventions]
+  title: Authorship independence and execution independence are orthogonal axes
+  decision: >
+    A contract regime has two INDEPENDENT independence properties; decide them
+    separately:
+
+      1. AUTHORSHIP independence — who decides what the contract SAYS. Determined
+         by boundary type (ADR-0060): consumer for a BFF, provider/Steward for a
+         data product.
+      2. EXECUTION independence — who RUNS the verification and reports
+         pass/fail. Determined by whether a party trustworthy to BOTH sides can
+         run it — INDEPENDENT of boundary type.
+
+    Neutral execution is adopted only when a genuine trust boundary exists
+    (distinct consumer and provider owners) AND a third-party runner is
+    available; with a single self-gating owner it is ceremony. These compose in
+    layers: a Pact Broker gives neutral ARTIFACT EXCHANGE (+ can-i-deploy); a
+    neutral runner adds neutral EXECUTION on top. Adopt each layer only when its
+    trust condition holds.
+  because: >
+    ADR-0058 made enforcement a hard gate so neither implementer can IGNORE a
+    red. Execution independence extends that one step: a third-party runner means
+    neither party can quietly WEAKEN the gate — disable a case, point it at a
+    forgiving instance, or sit on a failure. But neutral execution costs
+    infrastructure, so like the gate itself it must be justified by an actual
+    trust boundary rather than adopted reflexively (the ADR-0058
+    hard-gate-without-bottleneck discipline). Keeping the axes separate prevents
+    a concrete error this work actually made: concluding a BFF needs a neutral
+    repo "for independence", when its AUTHORSHIP is correctly consumer-side
+    (ADR-0060) and only its EXECUTION might warrant neutrality — a different
+    question with a different answer.
+  rejected:
+    - alt: Treat "independence" as a single axis.
+      because: >
+        Authorship and execution answer different questions (what the contract
+        says vs who can be trusted to run it). Collapsing them mis-assigns
+        ownership — the mistake that nearly put a BFF's consumer-owned contract
+        into a neutral Steward repo.
+    - alt: Always run verification on a neutral third party.
+      because: >
+        With one owner self-gating there is no trust boundary to protect;
+        neutral execution is cost without payoff.
+    - alt: Always let each side run its own verification.
+      because: >
+        Across a real cross-team trust boundary, self-run gates can be silently
+        weakened by either side; neutral execution is then worth its cost.
+  related: [ADR-0058, ADR-0060, ADR-0062, ADR-0057]
+
+- id: ADR-0062
+  status: proposed
+  date: '2026-06-20'
+  tags: [governance, steward, contract, shell, pods, bff, scope, conventions]
+  title: Stewardship has scopes — the Platform Steward governs data products, the integrator (shell) governs pod-side contracts
+  decision: >
+    Contract stewardship is scoped, not singular:
+
+      - PLATFORM STEWARD (the landvault-governance role): stewards cross-cutting
+        and PROVIDER-DRIVEN / data-product contracts — the neutral authority
+        for boundaries where consumer and provider are different teams.
+
+      - INTEGRATOR STEWARD: landvault-shell, as the pod integrator (registry
+        ADR-0007, ShellBus ADR-0005, service layer ADR-0055), stewards
+        CONSUMER-SIDE / pod-level contracts and MAY run the conformance gate for
+        a BFF that serves a single pod. The shell is neutral AMONG pods but sits
+        on the consumer side of any pod↔provider boundary, so this scope is
+        limited to consumer-driven, pod-facing boundaries. It must NOT steward
+        data-product / cross-team contracts — there the shell is a biased party
+        and the Platform Steward governs.
+
+    This is a recognised, recurring scope (expected to repeat as more pod↔BFF
+    pairs appear), not a one-off exception. Worked example: for mt-landvault-api
+    (a BFF for the Discover Pod), landvault-shell is the appropriate steward and
+    gate-runner.
+  because: >
+    Stewardship authority must match the trust position. The shell already
+    mediates the pod↔provider relationship, so for a single-pod BFF it is the
+    cheapest credible runner — execution independence (ADR-0061) is satisfied
+    because the shell is neutral among pods and the pod is the legitimate
+    authority (ADR-0060). But the shell's neutrality stops at the pod boundary:
+    extending it to cross-team data products would reinstate grading-your-own-
+    homework, which is exactly the failure the Platform Steward exists to
+    prevent. Scoping stewardship keeps each authority where it is actually
+    neutral, and avoids both a platform bottleneck for pod-local contracts and a
+    biased steward for cross-team ones.
+  rejected:
+    - alt: A single Platform Steward owns every contract.
+      because: >
+        Makes the platform a bottleneck for pod-local BFF contracts the shell
+        already mediates, when the shell is a perfectly good neutral runner among
+        pods. Over-centralises authority away from where the coupling is.
+    - alt: The shell stewards all contracts.
+      because: >
+        The shell is consumer-side; for cross-team data products it is a biased
+        party, not a neutral steward. Neutrality among pods does not extend to
+        neutrality between teams.
+  related: [ADR-0005, ADR-0007, ADR-0055, ADR-0060, ADR-0061, ADR-0057, ADR-0001]
