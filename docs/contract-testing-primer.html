@@ -80,7 +80,7 @@
       <li>Verify each boundary against a single shared contract rather than standing up every service together.</li>
       <li>The contract is one shared artifact both sides bind to, not two private copies that can drift.</li>
       <li>Who owns the contract depends on the boundary: consumer-driven, negotiated, or provider-driven.</li>
-      <li>The check runs automatically and blocks; people own policy and approve changes, not test runs.</li>
+      <li>The check runs as a pre-merge gate and on demand — not on every commit or on a schedule; people own policy and approve changes, not test runs.</li>
       <li>Contracts are about meaning as much as shape — identical shapes can still break a promise.</li>
     </ul>
   </div>
@@ -189,6 +189,10 @@
   someone owns the compatibility policy (additive changes are fine; breaking changes need a new version) and
   arbitrates change requests. Automating enforcement is precisely what lets the gate stay strict without
   becoming a bottleneck.</p>
+  <p><strong>When they run.</strong> These tests are heavier than unit tests — they exercise real services —
+  so run them where they earn their cost: on demand while working on a contract change, and as a required
+  check on the pull request that would land it. They are not a per-commit or scheduled job; running them
+  continuously adds load and noise without catching anything a pre-merge gate wouldn't.</p>
 
   <h2><span class="n">7</span>Meaning, not just shape</h2>
   <p>Shape asks whether a field is a number. Meaning asks whether <code>amount</code> still denotes gross
