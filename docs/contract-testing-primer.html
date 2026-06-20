@@ -63,42 +63,43 @@
 <div class="wrap">
 
   <header class="hero">
-    <p class="kicker">Engineering · Plain-English Primer</p>
+    <p class="kicker">LandVault Platform · Engineering</p>
     <h1>Contracts Between Services</h1>
-    <p class="sub">How we think about integration testing at LandVault — without the jargon.</p>
+    <p class="sub">How we approach integration and contract testing across the platform.</p>
   </header>
 
-  <p class="lead">When two services talk to each other, each one carries its own idea of what the other
-  promises. When those ideas quietly drift apart, things break in production <em>even though every test
-  passed</em> — because the bug lives in the <strong>gap between</strong> the services, where no single
-  service's tests are looking.</p>
+  <p class="lead">When two services talk, each carries its own assumptions about what the other promises.
+  When those assumptions drift apart, things break in production <em>even though every test passed</em> —
+  because the failure lives in the gap <em>between</em> the services, which no single service's tests
+  exercise.</p>
 
-  <p>We hit a real example in our own code: one endpoint that exists at <em>three different paths</em>
-  — <code>/field</code>, <code>/areal/predictions</code>, and <code>/areal/prediction</code> — all shipping
-  under the <em>same version number</em>. The route the code serves, the path the docs advertise, and the
-  path the live server answers on had all drifted apart. No unit test catches that. This primer explains how
-  we close that gap.</p>
+  <p>We have a live example in our own code: one endpoint reachable at three different paths —
+  <code>/field</code>, <code>/areal/predictions</code>, and <code>/areal/prediction</code> — all under the
+  same version number. The route the code serves, the path the docs advertise, and the path the running
+  server answers on had each drifted from the others. That is exactly the class of failure contract testing
+  exists to catch, and this document sets out how we handle it.</p>
 
   <div class="card tldr">
-    <h3>The whole idea in six lines</h3>
+    <h3>In brief</h3>
     <ul>
-      <li><strong>Integration testing</strong> = checking a service against its <em>contract</em>, through its front door — not poking its insides.</li>
-      <li><strong>Don't boot all the services together.</strong> Test each boundary against one <em>shared</em> contract.</li>
-      <li><strong>The contract is a real, shared artifact</strong> both sides bind to — not two private copies that can drift.</li>
-      <li><strong>Who owns the contract depends on the boundary:</strong> consumer-driven, negotiated, or provider-driven.</li>
-      <li><strong>The check is automated</strong> and blocking. People set policy and approve changes; they don't run tests by hand.</li>
-      <li><strong>Test meaning, not just shape.</strong> Same shape can still be a broken promise.</li>
+      <li>Integration testing checks a service against its <em>contract</em> from the outside — through its interface, not its internals.</li>
+      <li>Verify each boundary against a single shared contract rather than standing up every service together.</li>
+      <li>The contract is one shared artifact both sides bind to, not two private copies that can drift.</li>
+      <li>Who owns the contract depends on the boundary: consumer-driven, negotiated, or provider-driven.</li>
+      <li>The check runs automatically and blocks; people own policy and approve changes, not test runs.</li>
+      <li>Contracts are about meaning as much as shape — identical shapes can still break a promise.</li>
     </ul>
   </div>
 
-  <h2><span class="n">1</span>Unit vs. integration: the distinction that actually helps</h2>
-  <p>Forget "small test vs. big test." The useful line is <strong>what the test is allowed to know</strong>:</p>
-  <p><strong>A unit test is white-box</strong> — it knows the internals. That makes it precise, but it also
-  means it <em>breaks when you refactor</em>, even if behavior didn't change.</p>
-  <p><strong>An integration test is black-box</strong> — it only knows the <em>contract</em> (the public
-  front door). It can't see how the work is done, so it survives refactoring and breaks only when the
-  <em>observable behavior</em> changes. A nice bonus: black-box tests double as living documentation of
-  what a service actually promises.</p>
+  <h2><span class="n">1</span>Unit and integration tests, by what they know</h2>
+  <p>The distinction worth keeping isn't size — it's what a test is allowed to know about the thing it tests.</p>
+  <p>A <strong>unit test is white-box</strong>: it knows the internals. That makes it precise, and it also
+  means it breaks under refactoring even when behaviour hasn't changed.</p>
+  <p>An <strong>integration test is black-box</strong>: it knows only the contract — the interface. It can't
+  see how the work is done, so it survives refactoring and fails only when observable behaviour changes. A
+  useful side effect: black-box tests document what a service actually promises.</p>
+  <p>The boundary is relative to ownership. Everything inside a service you own is white-box to you; the test
+  that touches only its public interface is the black-box, integration test.</p>
 
   <figure>
     <svg viewBox="0 0 560 220" role="img" aria-label="A service boundary: internals tested by unit tests, the public contract tested by integration tests">
@@ -110,33 +111,30 @@
       <circle cx="60" cy="110" r="6" fill="#1f7a5a"/>
       <circle cx="500" cy="110" r="6" fill="#1f7a5a"/>
     </svg>
-    <figcaption>The boundary is relative to ownership: everything inside <em>your</em> service is white-box to you;
-    the test that only uses your public API is the black-box, integration test.</figcaption>
+    <figcaption>The boundary is relative to ownership: everything inside your service is white-box to you;
+    the test that uses only its public interface is the black-box, integration test.</figcaption>
   </figure>
 
-  <h2><span class="n">2</span>Don't boot the whole world</h2>
-  <p>The tempting approach is to spin up every service together and see if they talk. <strong>Don't.</strong>
-  It doesn't scale: the number of interactions grows faster than you can write tests, the setup is slow and
-  flaky, and when it goes red it tells you "<em>something</em> in the chain broke" — not <em>where</em>.</p>
-  <p>Instead, <strong>decompose</strong>: test each service against its contract, on its own. If service A
-  satisfies the contract, and service B was built against the same contract, they fit together — you don't
-  need to run them side-by-side to prove it. Keep full end-to-end runs for a small handful of critical
-  "smoke" journeys, treated as a canary, not as your main coverage.</p>
+  <h2><span class="n">2</span>Don't stand up the whole system</h2>
+  <p>The obvious approach — run every service together and check they cooperate — doesn't scale. Interaction
+  combinations grow faster than tests can cover them, the environment is slow and flaky, and a failure tells
+  you <em>something</em> in the chain broke, not <em>where</em>.</p>
+  <p>Decompose instead. Verify each service against its contract independently. If A satisfies the contract
+  and B was built against the same contract, they compose — you don't need them running side by side to know
+  it. Reserve full end-to-end runs for a few high-value paths, treated as a canary rather than as coverage.</p>
 
-  <h2><span class="n">3</span>The contract is the shared thing</h2>
-  <p>Drift happens when each side keeps its <em>own private copy</em> of the contract in its head. Provider
-  returns <code>user_id</code>; consumer expects <code>userId</code>. Both teams' tests pass. Production
-  breaks. Nothing failed because each side tested against its <em>own</em> idea of the truth.</p>
-  <p>The fix is one <strong>shared contract artifact</strong> both sides bind to. A good contract package has
-  <strong>two faces</strong>, built from one source:</p>
-  <p>① a <strong>conformance suite</strong> that checks the provider actually meets the contract, and
-  ② a <strong>mock</strong> the consumer develops against — so neither side can drift without something
-  going red.</p>
+  <h2><span class="n">3</span>The contract is the shared artifact</h2>
+  <p>Drift happens when each side keeps its own copy of the contract. The provider returns
+  <code>user_id</code>; the consumer expects <code>userId</code>. Both test suites pass; production fails —
+  because each side validated against its own version of the truth.</p>
+  <p>The remedy is a single shared contract both sides bind to. A well-formed contract package has
+  <strong>two faces</strong> built from one source: a <strong>conformance suite</strong> that checks the
+  provider against the contract, and a <strong>mock</strong> the consumer builds against. Neither side can
+  drift without something turning red.</p>
 
-  <h2><span class="n">4</span>Who owns the contract? Where final authority sits</h2>
-  <p>This is the decision everything else follows from. It comes down to one question:
-  <strong>who has final say over what the contract says?</strong> There are three answers — a spectrum, not
-  a binary.</p>
+  <h2><span class="n">4</span>Who owns the contract</h2>
+  <p>This decision drives the rest, and it reduces to a single question: <strong>who has final say over what
+  the contract says?</strong> There are three answers — a spectrum, not a binary.</p>
 
   <figure>
     <svg viewBox="0 0 600 170" role="img" aria-label="Directionality spectrum: consumer-driven, negotiated, provider-driven">
@@ -154,7 +152,7 @@
       <text x="300" y="120" text-anchor="middle" font-size="12.5" fill="#1f7a5a" font-family="sans-serif" font-weight="600">peer integration</text>
       <text x="530" y="120" text-anchor="middle" font-size="12.5" fill="#1f7a5a" font-family="sans-serif" font-weight="600">a data product</text>
     </svg>
-    <figcaption>The same testing mechanics apply to all three. Only the <em>authority</em> over the contract differs.</figcaption>
+    <figcaption>The testing mechanics are identical across all three. Only authority over the contract differs.</figcaption>
   </figure>
 
   <div class="tablewrap">
@@ -162,11 +160,11 @@
     <thead><tr><th>Kind</th><th>What it is</th><th>Who owns the contract</th></tr></thead>
     <tbody>
       <tr><td class="k">Consumer-driven<br><span style="font-weight:400;color:var(--muted)">(a BFF)</span></td>
-        <td>A backend built to serve <em>one</em> frontend — it exists for that consumer.</td>
+        <td>A backend built to serve one frontend — it exists for that consumer.</td>
         <td>The <strong>consumer</strong>. Its needs <em>are</em> the spec; the provider is verified against them.</td></tr>
       <tr><td class="k">Negotiated<br><span style="font-weight:400;color:var(--muted)">(peers)</span></td>
         <td>Two co-equal services, usually different teams, neither serving the other.</td>
-        <td><strong>Neither alone.</strong> Jointly owned; changed only by mutual agreement — like a treaty.</td></tr>
+        <td><strong>Neither alone.</strong> Jointly owned; changed only by mutual agreement, like a treaty.</td></tr>
       <tr><td class="k">Provider-driven<br><span style="font-weight:400;color:var(--muted)">(a data product)</span></td>
         <td>A stable interface that many teams depend on.</td>
         <td>The <strong>provider</strong>. It publishes the interface; consumers conform.</td></tr>
@@ -174,38 +172,37 @@
   </table>
   </div>
 
-  <p><strong>Quick test:</strong> who has final say over a change? The consumer → consumer-driven. The
-  provider → provider-driven. <em>Both must agree</em> → negotiated.</p>
+  <p>The quick test is to ask who has final authority over a change. The consumer → consumer-driven. The
+  provider → provider-driven. Both, by mutual agreement → negotiated.</p>
 
   <div class="callout">
-    <b>"Negotiated" is not a parking spot.</b> If you can't say <em>why</em> neither side is in charge, the
-    boundary isn't negotiated — it's <strong>unassigned</strong>, and you need to assign it. Negotiated means
-    a deliberate, shared treaty between equals, not "nobody decided yet."
+    <b>Negotiated is not a default for boundaries no one has thought about.</b> If you can't articulate why
+    neither side is subordinate, the boundary isn't negotiated — it's <strong>unassigned</strong>, and it
+    needs an owner. Negotiated means a deliberate treaty between equals, and it tends to be transitional:
+    over time, one side usually becomes the natural owner.
   </div>
 
-  <h2><span class="n">5</span>Two different kinds of "independent"</h2>
-  <p>These get confused, so keep them separate:</p>
-  <p><strong>Authorship</strong> — who decides what the contract <em>says</em>. (That's section 4 above.)</p>
-  <p><strong>Execution</strong> — who <em>runs</em> the check and reports pass/fail. A neutral runner matters
-  when two different teams are on the line, so neither can quietly weaken the gate. When one team is just
-  checking itself, a neutral runner is overkill.</p>
+  <h2><span class="n">5</span>Two kinds of independence</h2>
+  <p>Two things tend to get conflated. Keep them apart.</p>
+  <p><strong>Authorship</strong> — who decides what the contract says (section 4).</p>
+  <p><strong>Execution</strong> — who runs the check and reports the result. A neutral runner matters when
+  two teams sit on either side, so neither can quietly weaken the gate. When a single team is checking its
+  own work, it's unnecessary.</p>
 
-  <h2><span class="n">6</span>Automate the gate; let people do judgment</h2>
-  <p>The contract check runs automatically in CI as a <strong>blocking</strong> step — that's what actually
-  keeps drift out (a check you have to remember to run gets skipped under pressure). The human role is
-  different and smaller: someone owns the <em>compatibility policy</em> ("additive changes are fine; breaking
-  changes need a new version") and <em>arbitrates change requests</em>. They don't run tests by hand.
-  Automating enforcement is exactly what lets the gate be strict <em>without</em> becoming a bottleneck.</p>
+  <h2><span class="n">6</span>Automate the gate; reserve people for judgment</h2>
+  <p>The contract check runs in CI as a blocking step — that's what actually keeps drift out, because a check
+  you have to remember to run gets skipped under pressure. The human role is narrower and more valuable:
+  someone owns the compatibility policy (additive changes are fine; breaking changes need a new version) and
+  arbitrates change requests. Automating enforcement is precisely what lets the gate stay strict without
+  becoming a bottleneck.</p>
 
-  <h2><span class="n">7</span>Test meaning, not just shape</h2>
-  <p>Shape is "is this field a number?" Meaning is "does <code>amount</code> still mean <em>gross</em>, not
-  <em>net</em>?" The shape can be identical while the promise is broken. We check meaning in layers, by how
-  much it's worth:</p>
-  <p>① <strong>types &amp; ranges</strong> (cheap, always) → ② <strong>invariants</strong>
-  (<code>total == sum of line items</code>) → ③ <strong>properties</strong> ("adding an item never lowers
-  the total") → ④ a small <strong>human-reviewed remainder</strong> for meaning that simply can't be
-  encoded. We deliberately <em>don't</em> try to encode everything — past a point, specifying costs more
-  than the bugs would.</p>
+  <h2><span class="n">7</span>Meaning, not just shape</h2>
+  <p>Shape asks whether a field is a number. Meaning asks whether <code>amount</code> still denotes gross
+  rather than net. The shape can be identical while the promise is broken. We verify meaning in layers,
+  scaled to what each is worth: types and ranges; invariants (<code>total</code> equals the sum of line
+  items); properties (adding an item never lowers the total); and a small, human-reviewed remainder for the
+  meaning that resists encoding. We deliberately stop short of encoding everything — past a point,
+  specification costs more than the defects it prevents.</p>
 
   <hr class="hr">
 
@@ -213,39 +210,39 @@
   <div class="repo">
     <div class="item">
       <span class="tag">Consumer-driven · BFF</span>
-      <p style="margin:.2rem 0 0"><strong>mt-landvault-api</strong> serves the Discover Pod and nothing else.
-      So the <em>Discover Pod</em> (in <code>landvault-shell</code>) owns the contract; we verify the API
-      against what the Pod needs (consumer-driven, TypeScript/Pact-style). The shell — as the thing that
-      already integrates the pods — runs the check.</p>
+      <p style="margin:.2rem 0 0"><strong>mt-landvault-api</strong> serves the Discover Pod and nothing
+      else, which makes it a BFF. The Discover Pod (in <code>landvault-shell</code>) owns the contract; we
+      verify the API against what the Pod requires. The shell, which already integrates the pods, runs the
+      check.</p>
     </div>
     <div class="item">
       <span class="tag">Provider-driven · Data product</span>
-      <p style="margin:.2rem 0 0">The <strong>mt-data-*</strong> products (biology, chemistry, …) publish
-      stable interfaces many things depend on. They own their contracts; consumers conform; the Platform
-      Steward governs. (The conformance-suite pattern fits these.)</p>
+      <p style="margin:.2rem 0 0">The <strong>mt-data-*</strong> services (biology, chemistry, …) publish
+      stable interfaces that many consumers depend on — data products. Each owns its contract; consumers
+      conform; the Platform Steward governs.</p>
     </div>
     <div class="item">
       <span class="tag">Negotiated · Peers</span>
       <p style="margin:.2rem 0 0">Any boundary between two co-equal services owned by different teams, where
-      neither is serving the other — jointly owned, changed only by mutual agreement.</p>
+      neither serves the other: jointly owned, changed only by agreement.</p>
     </div>
   </div>
 
   <h2><span class="n">9</span>Glossary</h2>
   <dl class="gloss">
-    <dt>Contract</dt><dd>The agreed promise of what a service's interface accepts and returns.</dd>
+    <dt>Contract</dt><dd>The agreed interface between two services — what each request accepts and returns, and what that means.</dd>
     <dt>BFF (Backend-for-Frontend)</dt><dd>A backend built to serve one specific frontend.</dd>
-    <dt>Data product</dt><dd>A service that publishes a stable, shared interface for many consumers.</dd>
-    <dt>Conformance suite</dt><dd>Tests that check a running service actually meets its contract.</dd>
-    <dt>Drift</dt><dd>When the two sides' ideas of the contract silently diverge.</dd>
-    <dt>Steward</dt><dd>The person/role that owns the contract's policy and approves changes.</dd>
-    <dt>Black-box / white-box</dt><dd>Testing only the public contract vs. testing with knowledge of the internals.</dd>
+    <dt>Data product</dt><dd>A service that publishes a stable interface for many independent consumers.</dd>
+    <dt>Conformance suite</dt><dd>Tests that check a running service against its contract.</dd>
+    <dt>Drift</dt><dd>When the two sides' models of the contract silently diverge.</dd>
+    <dt>Steward</dt><dd>The role that owns a contract's compatibility policy and approves changes to it.</dd>
+    <dt>Black-box / white-box</dt><dd>Testing against the public contract only, versus testing with knowledge of the internals.</dd>
   </dl>
 
   <footer>
-    <p>This is the plain-English companion. The <strong>binding source of truth</strong> is the governance
-    ADRs <strong>0056–0062</strong> in the <code>landvault-governance</code> corpus (<code>adr/LOG.yaml</code>).
-    When this primer and the ADRs disagree, the ADRs win — and tell us, so we can fix the primer.</p>
+    <p>This is the companion to the binding source of truth: governance ADRs <strong>0056–0062</strong> in
+    the <code>landvault-governance</code> corpus (<code>adr/LOG.yaml</code>). Where this primer and the ADRs
+    disagree, the ADRs win — and flag it, so we can fix the primer.</p>
   </footer>
 
 </div>
