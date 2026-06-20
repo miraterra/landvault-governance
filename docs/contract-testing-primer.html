@@ -73,12 +73,6 @@
   because the failure lives in the gap <em>between</em> the services, which no single service's tests
   exercise.</p>
 
-  <p>We have a live example in our own code: one endpoint reachable at three different paths —
-  <code>/field</code>, <code>/areal/predictions</code>, and <code>/areal/prediction</code> — all under the
-  same version number. The route the code serves, the path the docs advertise, and the path the running
-  server answers on had each drifted from the others. That is exactly the class of failure contract testing
-  exists to catch, and this document sets out how we handle it.</p>
-
   <div class="card tldr">
     <h3>In brief</h3>
     <ul>
