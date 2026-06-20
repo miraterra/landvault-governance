@@ -1274,3 +1274,252 @@
         management. Deferred, not rejected.
   related: [ADR-0050, ADR-0015, ADR-0012, ADR-0001, ADR-0004, ADR-0005, SHELL-2026-0410, SHELL-2026-0416, PROP-2026-027, PROP-2026-015]
   carried_from: landvault-management/meta/adr
+
+- id: ADR-0056
+  status: proposed
+  date: '2026-06-19'
+  tags: [testing, contract, integration, boundary, layering, conventions]
+  title: Integration tests verify the contract at an ownership boundary; services are not co-run
+  decision: >
+    "Integration testing" at LandVault is defined relative to an OWNERSHIP
+    BOUNDARY (one Pod / one service / one accountable owner, per the Conway
+    alignment of ADR-0001), not by how many classes a test touches. The axis is
+    knowledge, not scope:
+      - A test is WHITE-BOX (a unit test) if it has knowledge of, or asserts on,
+        internals behind the boundary.
+      - A test is BLACK-BOX (an integration test) if it exercises ONLY the
+        externally-facing contract of the boundary and asserts ONLY on
+        observable outputs.
+    Because the boundary is fixed by ownership, scope becomes downstream of the
+    boundary, which dissolves the perennial unit-vs-integration ambiguity: the
+    same test is "unit" or "integration" depending only on which boundary it
+    respects.
+
+    An integration test runs the boundary's REAL internals (its database, its
+    parsing, its handlers) as opaque apparatus — the database participates but is
+    NEVER asserted on, because it is inside the box. Internal collaborators are
+    NOT mocked, because a mock is an assertion about internals and re-introduces
+    white-box coupling.
+
+    Cross-service correctness is NOT verified by spinning up multiple services
+    together. It is decomposed into per-boundary contract verification
+    (ADR-0057): verify each boundary against the one shared contract, and
+    composition follows. Whole-system co-running is reserved for a small,
+    explicitly separate set of broad happy-path smoke journeys (E2E), treated as
+    a canary, not as coverage.
+  because: >
+    Spinning up N services in one test does not scale: interaction combinations
+    grow faster than tests can be written, every added service adds a flake
+    source and startup-ordering burden, and a red result says "something in the
+    chain broke" without localising it. Decomposition to per-boundary contract
+    tests converts the multi-service problem back into the single-boundary
+    problem — the kind that is cheap, fast, runnable in one owner's CI, and
+    localising — and a shared contract artifact (ADR-0057) carries the
+    composition guarantee that co-running was being used to approximate.
+
+    Anchoring black-box/white-box to the ownership boundary (rather than to
+    "one class vs many") is what makes the definition actionable: it predicts
+    what makes a test break. Black-box tests survive refactoring and break only
+    on observable behaviour change, so they double as executable specifications;
+    the DB-as-opaque-apparatus rule is what keeps them refactoring-stable. This
+    is the testing counterpart of the boundary ADR-0001 already draws for Pods.
+  rejected:
+    - alt: Multi-service "spin up the world" integration tests as the primary mechanism.
+      because: >
+        Combinatorial blow-up, flaky, slow, and non-localising. It also only
+        SAMPLES composition (the paths it happens to exercise), so drift in any
+        unexercised field still ships. Right tool only for the genuinely emergent
+        residue (auth handshake, networking, config, ordering) — kept few.
+    - alt: Define unit vs integration by scope (one class vs several).
+      because: >
+        Gives no design guidance and no prediction of what breaks a test. A
+        scope definition cannot tell you whether to mock a collaborator; the
+        knowledge/boundary definition can.
+    - alt: Mock internal collaborators inside integration tests for speed/determinism.
+      because: >
+        A mock encodes the same assumption as the code, so it cannot catch the
+        seam bug it exists to catch, and it couples the test to internals
+        (white-box) — defeating the point. Mock only OUTSIDE the boundary under
+        test.
+  related: [ADR-0001, ADR-0002, ADR-0055, ADR-0057, ADR-0058, ADR-0059]
+
+- id: ADR-0057
+  status: proposed
+  date: '2026-06-19'
+  tags: [testing, contract, integration, boundary, schema, steward, conventions]
+  title: Each provider boundary has an independent, steward-owned contract package — one package, two faces
+  decision: >
+    For each provider boundary, THE CONTRACT IS A SINGLE INDEPENDENT PACKAGE,
+    versioned on its own and owned by an assigned Steward — not by the provider's
+    implementer and not by any consumer's implementer. It is, in effect, a
+    conformance kit (TCK) for that boundary.
+
+    The package presents TWO FACES built from one source:
+      1. A CONFORMANCE SUITE run against a live provider instance to verify the
+         provider satisfies the contract.
+      2. A STUB/MOCK generated from the same contract, which consumers develop
+         and test against.
+    Both sides bind to this one artifact; neither owns the truth. The wire SHAPE
+    is defined by a single source schema (OpenAPI / protobuf / JSON Schema) from
+    which both server and client types are generated, so shape drift is a build
+    error rather than a runtime surprise.
+
+    Default granularity is ONE PACKAGE PER PROVIDER BOUNDARY (matching the
+    ownership boundary of ADR-0056/ADR-0001). Split below the provider only when
+    one provider exposes genuinely distinct interfaces with different audiences
+    and lifecycles (e.g. a synchronous REST surface plus an async event schema).
+    Never package per consumer-relationship — that re-introduces the M×N
+    explosion ADR-0056 exists to avoid.
+  because: >
+    "Verify each side's contract, then assume they communicate" is only sound if
+    both sides bind to the SAME contract. Two privately-held copies drift: a
+    provider returning {user_id} and a consumer expecting {userId} both pass
+    their own tests and still fail in production. A single independent package
+    makes the contract one artifact both sides bind to, so the composition
+    guarantee of ADR-0056 actually holds.
+
+    Independence also buys honesty in both directions. The provider cannot
+    silently change observable behaviour — the conformance suite (which the
+    provider does not own) goes red. The consumer cannot quietly depend on an
+    undocumented quirk — the generated stub only ever exhibits CONTRACTED
+    behaviour, so the dependency is impossible to form. Assigning a Steward
+    prevents the "owned by neither ⇒ maintained by none" decay that kills
+    conformance kits. This extends ADR-0055's interface-first, real/mock-swappable
+    direction to a cross-boundary, independently-owned artifact, and realises the
+    stage-2 API-layer intent of ADR-0015.
+  rejected:
+    - alt: Consumer-driven contract tests owned by the consumer (Pact-style authorship).
+      because: >
+        Better than provider-owned, but only RELOCATES the bias — the consumer's
+        implementer still authors the expectations from their own assumptions,
+        and truth scatters across consumers. An independent package with
+        spec-derived assertions removes the implementer from authorship entirely.
+    - alt: Provider owns and writes its own conformance tests.
+      because: >
+        Grading your own homework. The test inherits the implementation's
+        blind spots; shared-assumption bugs become structurally invisible.
+    - alt: Package per consumer↔provider relationship.
+      because: >
+        Re-creates the M×N combinatorial surface decomposition was meant to
+        eliminate. Cost should scale with provider boundaries, not relationships.
+    - alt: Contract as prose / OpenAPI doc with no generated stub and no executable suite.
+      because: >
+        A description each side re-implements is two contracts wearing one name.
+        Drift returns. The artifact must be executable and binding on both faces.
+  related: [ADR-0055, ADR-0015, ADR-0050, ADR-0001, ADR-0056, ADR-0058, ADR-0059]
+
+- id: ADR-0058
+  status: proposed
+  date: '2026-06-19'
+  tags: [testing, contract, ci, enforcement, steward, compatibility, versioning, conventions]
+  title: Contract conformance is an automated hard gate; the Steward owns policy and arbitrates changes, not enforcement
+  decision: >
+    The conformance suite of ADR-0057 runs as a HARD CI GATE on every change to
+    a provider: a non-conforming change cannot merge. Backwards-compatibility is
+    checked MECHANICALLY (buf breaking, oasdiff, schema-registry compatibility
+    modes, or equivalent) against a Steward-set compatibility policy — default:
+    additive changes allowed within a major version; breaking changes require a
+    new major version plus a deprecation window.
+
+    The human Steward is removed from the ENFORCEMENT loop entirely. The role is
+    exactly two things: (a) own the compatibility/versioning POLICY, and
+    (b) ARBITRATE change requests, which flow consumer-pull (a consumer opens a
+    PR against the contract package; the Steward judges consistency, blesses the
+    version impact, and guards backwards compatibility). The Steward does NOT
+    originate requirements and does NOT hand-run or hand-review conformance.
+
+    Advisory conformance is not conformance: the gate blocks, it does not warn.
+  because: >
+    A hard gate and a human bottleneck normally trade off — a gate someone must
+    run is a bottleneck; a non-bottleneck is usually advisory. Automation breaks
+    the trade-off by splitting the work by frequency: per-commit ENFORCEMENT is
+    mechanical (no human), and only the rare, high-value ARBITRATION is human, so
+    the Steward cannot become the per-change bottleneck even in principle. This
+    is precisely the failure that retired heavyweight independent-QA, avoided
+    structurally rather than by discipline.
+
+    Consumer-pull on changes keeps the Steward an arbiter, not an ivory-tower
+    designer inventing interfaces disconnected from real need. And the gate must
+    BLOCK because ADR-0050 and ADR-0012 already demonstrated in this corpus that
+    binding rules without build-level enforcement get ignored under time
+    pressure (the lesson ADR-0055 then internalised): the wrong path has to fail
+    the build.
+  rejected:
+    - alt: Advisory conformance / manual Steward review of each change.
+      because: >
+        Either a bottleneck or ignored — the exact decay ADR-0050/ADR-0012
+        suffered when rules were documented but unenforced. "Advisory honesty"
+        is not honesty.
+    - alt: No explicit compatibility policy; judge breakage case-by-case.
+      because: >
+        Compatibility erodes silently and inconsistently. The policy is the
+        durable, automatable thing; case-by-case judgement is the rare
+        exception, not the rule.
+    - alt: Detect breaking changes by human inspection of diffs.
+      because: >
+        Slow, and misses structural breaks that tooling catches reliably.
+        Reserve human attention for SEMANTIC change (ADR-0059), which tooling
+        catches poorly.
+  related: [ADR-0057, ADR-0055, ADR-0050, ADR-0012, ADR-0056, ADR-0059]
+
+- id: ADR-0059
+  status: proposed
+  date: '2026-06-19'
+  tags: [testing, contract, semantics, property-based, metamorphic, steward, conventions]
+  title: Contract semantics are verified in tiers; isolated semantics are the human-reviewed residue
+  decision: >
+    Conformance must cover MEANING, not only shape. Semantics are verified in
+    tiers, applied by risk rather than uniformly:
+      1. Refined types / constrained schema EVERYWHERE — formats (ISO-8601),
+         ranges (>= 0), enums, cross-field constraints (endDate >= startDate).
+         Nearly free and declarative.
+      2. Invariants & postconditions for anything with business logic —
+         e.g. total == sum(lineItems), net == gross - tax, create-then-read
+         returns what was written.
+      3. Metamorphic relations for non-trivial logic — oracle-free properties
+         (monotonicity, round-trip, commutativity) asserted across generated
+         inputs, for behaviours where exact outputs cannot be predicted.
+      4. Model-based / stateful testing ONLY for lifecycle-heavy boundaries —
+         generated operation sequences checked against a state-machine model
+         (create⇒exists, delete⇒gone, idempotency).
+      5. The irreducible RESIDUE — isolated semantics with no relational anchor —
+         handled by curated golden examples, Steward review of the contract
+         CHANGE (not the whole system), and naming/doc discipline; optionally a
+         NON-BLOCKING LLM advisory check that flags suspected intent drift.
+
+    The decision explicitly includes what NOT to encode: invest heavily in
+    tiers 1–2, add 3 for business logic, add 4 only when state is the meaning,
+    and consciously leave the rest as residue.
+  because: >
+    Meaning is mechanically checkable only to the degree it is RELATIONAL or
+    PINNED. A field whose meaning flips (amount: gross → net) with identical
+    shape is caught only if an invariant ties it to other observable values;
+    shape-only conformance (ADR-0057/0058 structural gate) is blind to it.
+    Metamorphic testing is the key tool because it needs no oracle, so it scales
+    to logic where asserting an exact answer is impossible.
+
+    The cost curve steepens sharply after tier 3, so chasing 100% semantic
+    encoding is the same over-engineering trap as an ivory-tower Steward
+    (ADR-0058): you spend more specifying than the bugs would cost. A small,
+    deliberately-retained human residue is rational precisely because it reviews
+    a CONTRACT DIFF — small and legible — rather than the whole system, keeping
+    the Steward's surviving judgement scoped to genuine novelty. Spec-derived and
+    property-based generation, not a second human author, is what removes
+    shared-assumption bias; the human handles only what generation structurally
+    cannot.
+  rejected:
+    - alt: Shape-only conformance (rely on the structural gate alone).
+      because: >
+        Misses semantic drift that preserves shape — the highest-trust, hardest
+        class of contract break.
+    - alt: Aim for complete formal/semantic specification of every contract.
+      because: >
+        Cost exceeds the bug cost past tier 3; the ivory-tower trap. The skill
+        is choosing what not to encode.
+    - alt: Assign a separate human author to write semantic tests.
+      because: >
+        A different human still shares cultural/assumption blind spots and
+        becomes a bottleneck. Prefer spec-derived + property-based generation
+        (no shared blind spot, actively adversarial), with humans only on the
+        residue.
+  related: [ADR-0057, ADR-0058, ADR-0056, ADR-0055]
