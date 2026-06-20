@@ -1346,17 +1346,23 @@
 - id: ADR-0057
   status: proposed
   date: '2026-06-19'
-  tags: [testing, contract, integration, boundary, schema, steward, conventions]
-  title: A provider-driven (data-product) boundary has an independent, steward-owned contract package — one package, two faces
+  tags: [testing, contract, integration, boundary, schema, steward, negotiated, data-product, conventions]
+  title: A provider-driven or negotiated boundary has an independent, steward-owned contract package — one package, two faces
   decision: >
-    SCOPE: this ADR governs PROVIDER-DRIVEN boundaries (data products) as
-    classified by ADR-0060. For consumer-driven boundaries (BFFs) the contract
-    is authored consumer-side and this ADR does not apply — see ADR-0060. The
-    anti-bias machinery below (neutral ownership, spec-derived assertions) is a
-    data-product concern: it exists because a data product has a
-    consumer-independent ground truth to protect; a BFF does not.
+    SCOPE: this ADR governs boundaries that have an INDEPENDENT contract artifact
+    — PROVIDER-DRIVEN (data product) and NEGOTIATED (peer integration)
+    boundaries, as classified by ADR-0060. It does NOT apply to consumer-driven
+    boundaries (BFFs), whose contract is authored consumer-side (ADR-0060). The
+    difference between the two cases it does govern is AUTHORITY, not mechanism:
+    in a data product the PROVIDER is the authoring authority and the Steward
+    oversees to prevent grading-your-own-homework; in a negotiated boundary
+    authorship is BILATERAL and the Steward holds a contract OWNED BY NEITHER
+    side, changed only by mutual agreement — the case the "owned by neither
+    implementer" language below fits MOST purely. The anti-bias machinery applies
+    to both: each has a consumer-independent ground truth to protect; a BFF does
+    not.
 
-    For each provider-driven boundary, THE CONTRACT IS A SINGLE INDEPENDENT PACKAGE,
+    For each such boundary, THE CONTRACT IS A SINGLE INDEPENDENT PACKAGE,
     versioned on its own and owned by an assigned Steward — not by the provider's
     implementer and not by any consumer's implementer. It is, in effect, a
     conformance kit (TCK) for that boundary.
@@ -1480,9 +1486,10 @@
     SCOPE: the TIERS below apply to verifying meaning at any boundary,
     regardless of contract direction (ADR-0060). The ANTI-BIAS rationale in the
     `because` — prefer spec-derived/property-based generation over a human
-    author — is a PROVIDER-DRIVEN (data-product) concern: it removes
-    shared-assumption bias against a consumer-independent truth. At a
-    consumer-driven boundary (BFF) there is no such independent truth, so the
+    author — applies to boundaries with a consumer-independent truth
+    (PROVIDER-DRIVEN data products and NEGOTIATED peer integrations): it removes
+    shared-assumption bias against that truth. At a consumer-driven boundary
+    (BFF) there is no such independent truth, so the
     consumer authoring the semantic expectations is correct, not a bias to
     engineer away (ADR-0060).
 
@@ -1545,52 +1552,88 @@
 - id: ADR-0060
   status: proposed
   date: '2026-06-20'
-  tags: [testing, contract, integration, boundary, bff, data-product, directionality, conventions]
-  title: Contract directionality is determined by boundary type — BFF is consumer-driven, data product is provider-driven
+  tags: [testing, contract, integration, boundary, bff, data-product, negotiated, peer-integration, directionality, conventions]
+  title: Contract directionality is set by where final authority sits — consumer-driven, negotiated, or provider-driven
   decision: >
-    Which side AUTHORS a contract is a property of the boundary, not a global
-    policy. It is decided by consumer cardinality and team coupling (Conway):
+    Which side controls a contract's CONTENT is a property of the boundary, not
+    a global policy. The deciding question is WHERE FINAL AUTHORITY SITS — a
+    three-point spectrum, not a binary:
 
       - CONSUMER-DRIVEN (a BFF — one, or few, tightly-coupled consumers, often
-        the same team): the consumer authors the contract; its expectations ARE
-        the spec; the provider is VERIFIED AGAINST them. There is no
+        the same team): the CONSUMER holds final authority. Its expectations ARE
+        the spec; the provider is verified against them. There is no
         consumer-independent ground truth, so this is correct authority, not
         bias. Tooling aligns with the consumer (e.g. Pact-style CDC); the
         consumer's ADR-0055 MockXService is the proto-contract, and the Pact
         mock the consumer develops against IS ADR-0057's "face 2" for free.
-        ADR-0057's neutral/independent apparatus does NOT apply here.
+        ADR-0057's neutral/independent apparatus does NOT apply.
+
+      - NEGOTIATED (a peer integration — co-equal parties, typically different
+        teams, neither serving the other): NEITHER side holds unilateral
+        authority. The contract is jointly authored and JOINTLY OWNED; its
+        defining property is BILATERAL CHANGE CONTROL — neither side may change
+        it unilaterally, like a treaty. This is where ADR-0057's "owned by
+        neither implementer, neutral Steward" apparatus fits MOST purely.
 
       - PROVIDER-DRIVEN (a data product — many or unknown, cross-team
-        consumers): the provider (or a neutral Steward) authors and owns the
-        contract and consumers conform. ADR-0057 governs.
+        consumers): the PROVIDER holds final authority. It authors and owns the
+        published interface; consumers conform (they may request, the provider
+        decides). ADR-0057 governs; a neutral Steward oversees to prevent
+        grading-your-own-homework.
 
-    Classification test: if the boundary exists to serve a specific consumer and
-    would change when that consumer's needs change, it is a BFF (consumer-driven);
-    if it publishes a stable interface many consumers depend on, it is a data
-    product (provider-driven). Worked example: mt-landvault-api is a BFF for the
-    Discover Pod in landvault-shell → consumer-driven.
+    Verification STRUCTURE is identical in all three: verify whichever side
+    implements the interface against the contract, and let the consumer develop
+    against a mock of it. Only AUTHORITY differs — that is the whole axis.
+
+    Classification test — name who has final say: changes when ONE consumer's
+    needs change → consumer-driven; publishes a stable interface many depend on
+    and the provider decides changes → provider-driven; change genuinely requires
+    MUTUAL agreement between co-equal peers → negotiated. ANTI-COP-OUT TEST:
+    "negotiated" is NOT a place to park an undecided boundary. If you cannot
+    state WHY neither party is subordinate, it is not negotiated — it is
+    UNASSIGNED, and you must assign it. Negotiated is also often transitional:
+    Conway pressure tends to resolve a boundary toward one owner over time, so
+    revisit it rather than assume it permanent.
+
+    Worked example: mt-landvault-api is a BFF for the Discover Pod in
+    landvault-shell → consumer-driven.
   because: >
-    A BFF exists to serve its consumer, so there is no truth beyond "what the
-    consumer needs" — the consumer's expectations are the ground truth, and
-    consumer authorship is correct authority. This is the key scoping result for
-    ADR-0057 and ADR-0059: their anti-bias machinery (neutral ownership,
-    spec-derived/property-based generation to kill shared-assumption bias) exists
-    to protect a consumer-INDEPENDENT truth, which only a data product has. A
-    data product serves many decoupled, cross-team consumers and must guarantee
-    stability, so it cannot bend to any one consumer — provider authority plus a
-    neutral Steward is required. Directionality is simply Conway's law applied to
-    contracts: the contract is owned where the coupling is.
+    Directionality is about ONE thing — who controls the contract's content —
+    and that admits exactly three positions: consumer, neither, provider. A
+    binary (consumer vs provider) is therefore incomplete: it has no home for
+    co-equal peer integrations and forces them to masquerade as one side, which
+    licenses unilateral change that silently breaks the other. A BFF has no truth
+    beyond "what the consumer needs", so consumer authorship is correct, not bias
+    — the key scoping result for ADR-0057/0059, whose anti-bias machinery
+    protects a consumer-INDEPENDENT truth that only data-product and negotiated
+    contracts have. A data product serves many decoupled consumers and must stay
+    stable, so the provider must hold authority. A peer integration has two
+    legitimate sets of constraints and no subordinate side, so authority must be
+    shared and change made bilateral. Directionality is Conway's law applied to
+    contracts: control sits where the coupling is, and when coupling is
+    symmetric, control is shared.
   rejected:
+    - alt: A binary split — consumer-driven vs provider-driven only.
+      because: >
+        Leaves co-equal peer integrations with no correct home; they get forced
+        to pretend one side is subordinate, which licenses unilateral change that
+        breaks the other. The middle (negotiated) is a real authority position,
+        not an edge case.
+    - alt: A "negotiated" bucket for any boundary whose direction is unclear.
+      because: >
+        That turns the category into a cop-out for undecided ownership.
+        Negotiated means DELIBERATE shared authority between co-equal peers
+        (bilateral change control), not "nobody decided" — see the anti-cop-out
+        test.
     - alt: One global contract direction for every boundary (ADR-0057's implicit assumption).
       because: >
         Forces the neutral/independent apparatus onto BFFs where it is ceremony
-        (no independent truth to protect), and would push consumer-driven
-        authorship onto data products where it scatters truth across consumers.
-        Direction must be chosen per boundary.
+        (no independent truth to protect), and mis-assigns peer and data-product
+        boundaries. Direction must be chosen per boundary.
     - alt: Classify by transport/technology (REST vs events, sync vs async).
       because: >
-        Direction follows consumer coupling and cardinality, not protocol. A
-        REST endpoint can be either a BFF or a data product; the transport does
+        Direction follows authority and coupling, not protocol. A REST endpoint
+        can be a BFF, a data product, or a peer integration; the transport does
         not decide.
   related: [ADR-0057, ADR-0059, ADR-0056, ADR-0055, ADR-0001, ADR-0007, ADR-0061, ADR-0062]
 
@@ -1604,15 +1647,18 @@
     separately:
 
       1. AUTHORSHIP independence — who decides what the contract SAYS. Determined
-         by boundary type (ADR-0060): consumer for a BFF, provider/Steward for a
-         data product.
+         by boundary type (ADR-0060): consumer for a BFF, provider for a data
+         product, BILATERAL for a negotiated peer integration.
       2. EXECUTION independence — who RUNS the verification and reports
          pass/fail. Determined by whether a party trustworthy to BOTH sides can
          run it — INDEPENDENT of boundary type.
 
     Neutral execution is adopted only when a genuine trust boundary exists
-    (distinct consumer and provider owners) AND a third-party runner is
-    available; with a single self-gating owner it is ceremony. These compose in
+    (distinct owners on each side) AND a third-party runner is available; with a
+    single self-gating owner it is ceremony. A NEGOTIATED boundary is the
+    clearest case for neutral execution, since its trust boundary is intrinsic
+    (co-equal peers, different teams); a BFF self-gated by one owner is the
+    clearest case against. These compose in
     layers: a Pact Broker gives neutral ARTIFACT EXCHANGE (+ can-i-deploy); a
     neutral runner adds neutral EXECUTION on top. Adopt each layer only when its
     trust condition holds.
@@ -1649,13 +1695,15 @@
   status: proposed
   date: '2026-06-20'
   tags: [governance, steward, contract, shell, pods, bff, scope, conventions]
-  title: Stewardship has scopes — the Platform Steward governs data products, the integrator (shell) governs pod-side contracts
+  title: Stewardship has scopes — the Platform Steward governs cross-team contracts, the integrator (shell) governs pod-side contracts
   decision: >
     Contract stewardship is scoped, not singular:
 
-      - PLATFORM STEWARD (the landvault-governance role): stewards cross-cutting
-        and PROVIDER-DRIVEN / data-product contracts — the neutral authority
-        for boundaries where consumer and provider are different teams.
+      - PLATFORM STEWARD (the landvault-governance role): stewards cross-cutting,
+        PROVIDER-DRIVEN (data-product) AND NEGOTIATED (peer-integration)
+        contracts — the neutral authority for boundaries where the parties are
+        different teams. The negotiated case is the purest: owned by neither
+        side and changed only by mutual agreement, it needs a neutral holder.
 
       - INTEGRATOR STEWARD: landvault-shell, as the pod integrator (registry
         ADR-0007, ShellBus ADR-0005, service layer ADR-0055), stewards
