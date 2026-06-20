@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contracts Between Services — A LandVault Primer</title>
+<style>
+  :root{
+    --ink:#1c2321; --muted:#5b6b66; --line:#e2e6e4; --paper:#ffffff;
+    --panel:#f5f7f6; --accent:#1f7a5a; --accent-soft:#e7f1ec; --warn:#9a5b00; --warn-soft:#fbf1e0;
+    --maxw:50rem;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.62; font-size:17px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:3rem 1.25rem 5rem}
+  header.hero{border-left:4px solid var(--accent); padding:.2rem 0 .2rem 1.1rem; margin-bottom:2.5rem}
+  .kicker{font-size:.78rem; letter-spacing:.09em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 .6rem}
+  h1{font-size:2rem; line-height:1.15; margin:0 0 .6rem; letter-spacing:-.01em}
+  .sub{font-size:1.12rem; color:var(--muted); margin:0}
+  h2{font-size:1.32rem; margin:2.8rem 0 .5rem; letter-spacing:-.01em; line-height:1.25}
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:.5rem; font-weight:800}
+  h3{font-size:1.02rem; margin:1.4rem 0 .3rem}
+  p{margin:.7rem 0}
+  strong{font-weight:650}
+  em{color:var(--ink)}
+  a{color:var(--accent)}
+  code{background:var(--panel); padding:.08em .35em; border-radius:4px; font-size:.86em;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .lead{font-size:1.06rem}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1.1rem 1.3rem; margin:1.6rem 0}
+  .card.tldr{background:var(--accent-soft); border-color:#cfe6dc}
+  .card h3{margin-top:0}
+  .tldr ul{margin:.4rem 0 0; padding-left:1.1rem}
+  .tldr li{margin:.42rem 0}
+  .callout{border-left:3px solid var(--warn); background:var(--warn-soft); padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:1.2rem 0; font-size:.96rem}
+  .callout b{color:var(--warn)}
+  figure{margin:1.6rem 0; text-align:center}
+  figure svg{max-width:100%; height:auto}
+  figcaption{font-size:.85rem; color:var(--muted); margin-top:.6rem}
+  .tablewrap{overflow-x:auto; margin:1.4rem 0; border:1px solid var(--line); border-radius:12px}
+  table{border-collapse:collapse; width:100%; min-width:38rem; font-size:.95rem}
+  th,td{text-align:left; padding:.7rem .9rem; border-bottom:1px solid var(--line); vertical-align:top}
+  thead th{background:var(--panel); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  td.k{font-weight:650; white-space:nowrap}
+  .repo{display:grid; gap:.8rem; margin:1.4rem 0}
+  .repo .item{border:1px solid var(--line); border-radius:10px; padding:.85rem 1.05rem}
+  .repo .tag{display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--accent); background:var(--accent-soft); padding:.12rem .5rem; border-radius:999px; margin-bottom:.35rem}
+  .gloss dt{font-weight:650; margin-top:.8rem}
+  .gloss dd{margin:.15rem 0 0; color:var(--muted); font-size:.95rem}
+  footer{margin-top:3rem; padding-top:1.4rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem}
+  .hr{height:1px; background:var(--line); border:0; margin:2.6rem 0}
+  @media(max-width:480px){ body{font-size:16px} h1{font-size:1.6rem} .wrap{padding:2rem 1rem 3.5rem} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="kicker">LandVault Platform · Engineering</p>
+    <h1>Contracts Between Services</h1>
+    <p class="sub">How we approach integration and contract testing across the platform.</p>
+  </header>
+
+  <p class="lead">When two services talk, each carries its own assumptions about what the other promises.
+  When those assumptions drift apart, things break in production <em>even though every test passed</em> —
+  because the failure lives in the gap <em>between</em> the services, which no single service's tests
+  exercise.</p>
+
+  <div class="card tldr">
+    <h3>In brief</h3>
+    <ul>
+      <li>Integration testing checks a service against its <em>contract</em> from the outside — through its interface, not its internals.</li>
+      <li>Verify each boundary against a single shared contract rather than standing up every service together.</li>
+      <li>The contract is one shared artifact both sides bind to, not two private copies that can drift.</li>
+      <li>Who owns the contract depends on the boundary: consumer-driven, negotiated, or provider-driven.</li>
+      <li>The check runs as a pre-merge gate and on demand — not on every commit or on a schedule; people own policy and approve changes, not test runs.</li>
+      <li>Contracts are about meaning as much as shape — identical shapes can still break a promise.</li>
+    </ul>
+  </div>
+
+  <h2><span class="n">1</span>Unit and integration tests, by what they know</h2>
+  <p>The distinction worth keeping isn't size — it's what a test is allowed to know about the thing it tests.</p>
+  <p>A <strong>unit test is white-box</strong>: it knows the internals. That makes it precise, and it also
+  means it breaks under refactoring even when behaviour hasn't changed.</p>
+  <p>An <strong>integration test is black-box</strong>: it knows only the contract — the interface. It can't
+  see how the work is done, so it survives refactoring and fails only when observable behaviour changes. A
+  useful side effect: black-box tests document what a service actually promises.</p>
+  <p>The boundary is relative to ownership. Everything inside a service you own is white-box to you; the test
+  that touches only its public interface is the black-box, integration test.</p>
+
+  <figure>
+    <svg viewBox="0 0 560 220" role="img" aria-label="A service boundary: internals tested by unit tests, the public contract tested by integration tests">
+      <rect x="60" y="30" width="440" height="160" rx="16" fill="#f5f7f6" stroke="#1f7a5a" stroke-width="2.5"/>
+      <text x="280" y="22" text-anchor="middle" font-size="13" fill="#5b6b66" font-family="sans-serif">the public contract — black-box / integration tests</text>
+      <rect x="120" y="62" width="320" height="100" rx="10" fill="#ffffff" stroke="#9fb3ab" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <text x="280" y="108" text-anchor="middle" font-size="14" fill="#1c2321" font-family="sans-serif" font-weight="700">internals</text>
+      <text x="280" y="130" text-anchor="middle" font-size="12.5" fill="#5b6b66" font-family="sans-serif">DB, queries, logic — white-box / unit tests</text>
+      <circle cx="60" cy="110" r="6" fill="#1f7a5a"/>
+      <circle cx="500" cy="110" r="6" fill="#1f7a5a"/>
+    </svg>
+    <figcaption>The boundary is relative to ownership: everything inside your service is white-box to you;
+    the test that uses only its public interface is the black-box, integration test.</figcaption>
+  </figure>
+
+  <h2><span class="n">2</span>Don't stand up the whole system</h2>
+  <p>The obvious approach — run every service together and check they cooperate — doesn't scale. Interaction
+  combinations grow faster than tests can cover them, the environment is slow and flaky, and a failure tells
+  you <em>something</em> in the chain broke, not <em>where</em>.</p>
+  <p>Decompose instead. Verify each service against its contract independently. If A satisfies the contract
+  and B was built against the same contract, they compose — you don't need them running side by side to know
+  it. Reserve full end-to-end runs for a few high-value paths, treated as a canary rather than as coverage.</p>
+
+  <h2><span class="n">3</span>The contract is the shared artifact</h2>
+  <p>Drift happens when each side keeps its own copy of the contract. The provider returns
+  <code>user_id</code>; the consumer expects <code>userId</code>. Both test suites pass; production fails —
+  because each side validated against its own version of the truth.</p>
+  <p>The remedy is a single shared contract both sides bind to. A well-formed contract package has
+  <strong>two faces</strong> built from one source: a <strong>conformance suite</strong> that checks the
+  provider against the contract, and a <strong>mock</strong> the consumer builds against. Neither side can
+  drift without something turning red.</p>
+
+  <h2><span class="n">4</span>Who owns the contract</h2>
+  <p>This decision drives the rest, and it reduces to a single question: <strong>who has final say over what
+  the contract says?</strong> There are three answers — a spectrum, not a binary.</p>
+
+  <figure>
+    <svg viewBox="0 0 600 170" role="img" aria-label="Directionality spectrum: consumer-driven, negotiated, provider-driven">
+      <line x1="70" y1="60" x2="530" y2="60" stroke="#cfd8d4" stroke-width="3"/>
+      <circle cx="70" cy="60" r="9" fill="#1f7a5a"/>
+      <circle cx="300" cy="60" r="9" fill="#1f7a5a"/>
+      <circle cx="530" cy="60" r="9" fill="#1f7a5a"/>
+      <text x="70" y="40" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1c2321" font-family="sans-serif">Consumer-driven</text>
+      <text x="300" y="40" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1c2321" font-family="sans-serif">Negotiated</text>
+      <text x="530" y="40" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1c2321" font-family="sans-serif">Provider-driven</text>
+      <text x="70" y="92" text-anchor="middle" font-size="12" fill="#5b6b66" font-family="sans-serif">consumer decides</text>
+      <text x="300" y="92" text-anchor="middle" font-size="12" fill="#5b6b66" font-family="sans-serif">both must agree</text>
+      <text x="530" y="92" text-anchor="middle" font-size="12" fill="#5b6b66" font-family="sans-serif">provider decides</text>
+      <text x="70" y="120" text-anchor="middle" font-size="12.5" fill="#1f7a5a" font-family="sans-serif" font-weight="600">a BFF</text>
+      <text x="300" y="120" text-anchor="middle" font-size="12.5" fill="#1f7a5a" font-family="sans-serif" font-weight="600">peer integration</text>
+      <text x="530" y="120" text-anchor="middle" font-size="12.5" fill="#1f7a5a" font-family="sans-serif" font-weight="600">a data product</text>
+    </svg>
+    <figcaption>The testing mechanics are identical across all three. Only authority over the contract differs.</figcaption>
+  </figure>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Kind</th><th>What it is</th><th>Who owns the contract</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Consumer-driven<br><span style="font-weight:400;color:var(--muted)">(a BFF)</span></td>
+        <td>A backend built to serve one frontend — it exists for that consumer.</td>
+        <td>The <strong>consumer</strong>. Its needs <em>are</em> the spec; the provider is verified against them.</td></tr>
+      <tr><td class="k">Negotiated<br><span style="font-weight:400;color:var(--muted)">(peers)</span></td>
+        <td>Two co-equal services, usually different teams, neither serving the other.</td>
+        <td><strong>Neither alone.</strong> Jointly owned; changed only by mutual agreement, like a treaty.</td></tr>
+      <tr><td class="k">Provider-driven<br><span style="font-weight:400;color:var(--muted)">(a data product)</span></td>
+        <td>A stable interface that many teams depend on.</td>
+        <td>The <strong>provider</strong>. It publishes the interface; consumers conform.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The quick test is to ask who has final authority over a change. The consumer → consumer-driven. The
+  provider → provider-driven. Both, by mutual agreement → negotiated.</p>
+
+  <div class="callout">
+    <b>Negotiated is not a default for boundaries no one has thought about.</b> If you can't articulate why
+    neither side is subordinate, the boundary isn't negotiated — it's <strong>unassigned</strong>, and it
+    needs an owner. Negotiated means a deliberate treaty between equals, and it tends to be transitional:
+    over time, one side usually becomes the natural owner.
+  </div>
+
+  <h2><span class="n">5</span>Two kinds of independence</h2>
+  <p>Two things tend to get conflated. Keep them apart.</p>
+  <p><strong>Authorship</strong> — who decides what the contract says (section 4).</p>
+  <p><strong>Execution</strong> — who runs the check and reports the result. A neutral runner matters when
+  two teams sit on either side, so neither can quietly weaken the gate. When a single team is checking its
+  own work, it's unnecessary.</p>
+
+  <h2><span class="n">6</span>Automate the gate; reserve people for judgment</h2>
+  <p>The contract check runs in CI as a blocking step — that's what actually keeps drift out, because a check
+  you have to remember to run gets skipped under pressure. The human role is narrower and more valuable:
+  someone owns the compatibility policy (additive changes are fine; breaking changes need a new version) and
+  arbitrates change requests. Automating enforcement is precisely what lets the gate stay strict without
+  becoming a bottleneck.</p>
+  <p><strong>When they run.</strong> These tests are heavier than unit tests — they exercise real services —
+  so run them where they earn their cost: on demand while working on a contract change, and as a required
+  check on the pull request that would land it. They are not a per-commit or scheduled job; running them
+  continuously adds load and noise without catching anything a pre-merge gate wouldn't.</p>
+
+  <h2><span class="n">7</span>Meaning, not just shape</h2>
+  <p>Shape asks whether a field is a number. Meaning asks whether <code>amount</code> still denotes gross
+  rather than net. The shape can be identical while the promise is broken. We verify meaning in layers,
+  scaled to what each is worth: types and ranges; invariants (<code>total</code> equals the sum of line
+  items); properties (adding an item never lowers the total); and a small, human-reviewed remainder for the
+  meaning that resists encoding. We deliberately stop short of encoding everything — past a point,
+  specification costs more than the defects it prevents.</p>
+
+  <hr class="hr">
+
+  <h2><span class="n">8</span>What this means for our codebase</h2>
+  <div class="repo">
+    <div class="item">
+      <span class="tag">Consumer-driven · BFF</span>
+      <p style="margin:.2rem 0 0"><strong>mt-landvault-api</strong> serves the Discover Pod and nothing
+      else, which makes it a BFF. The Discover Pod (in <code>landvault-shell</code>) owns the contract; we
+      verify the API against what the Pod requires. The shell, which already integrates the pods, runs the
+      check.</p>
+    </div>
+    <div class="item">
+      <span class="tag">Provider-driven · Data product</span>
+      <p style="margin:.2rem 0 0">The <strong>mt-data-*</strong> services (biology, chemistry, …) publish
+      stable interfaces that many consumers depend on — data products. Each owns its contract; consumers
+      conform; the Platform Steward governs.</p>
+    </div>
+    <div class="item">
+      <span class="tag">Negotiated · Peers</span>
+      <p style="margin:.2rem 0 0">Any boundary between two co-equal services owned by different teams, where
+      neither serves the other: jointly owned, changed only by agreement.</p>
+    </div>
+  </div>
+
+  <h2><span class="n">9</span>Glossary</h2>
+  <dl class="gloss">
+    <dt>Contract</dt><dd>The agreed interface between two services — what each request accepts and returns, and what that means.</dd>
+    <dt>BFF (Backend-for-Frontend)</dt><dd>A backend built to serve one specific frontend.</dd>
+    <dt>Data product</dt><dd>A service that publishes a stable interface for many independent consumers.</dd>
+    <dt>Conformance suite</dt><dd>Tests that check a running service against its contract.</dd>
+    <dt>Drift</dt><dd>When the two sides' models of the contract silently diverge.</dd>
+    <dt>Steward</dt><dd>The role that owns a contract's compatibility policy and approves changes to it.</dd>
+    <dt>Black-box / white-box</dt><dd>Testing against the public contract only, versus testing with knowledge of the internals.</dd>
+  </dl>
+
+  <footer>
+    <p>This is the companion to the binding source of truth: governance ADRs <strong>0056–0062</strong> in
+    the <code>landvault-governance</code> corpus (<code>adr/LOG.yaml</code>). Where this primer and the ADRs
+    disagree, the ADRs win — and flag it, so we can fix the primer.</p>
+  </footer>
+
+</div>
+</body>
+</html>
