@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Testing Stack — A LandVault Primer</title>
+<style>
+  :root{
+    --ink:#1c2321; --muted:#5b6b66; --line:#e2e6e4; --paper:#ffffff;
+    --panel:#f5f7f6; --accent:#1f7a5a; --accent-soft:#e7f1ec; --warn:#9a5b00; --warn-soft:#fbf1e0;
+    --maxw:50rem;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.62; font-size:17px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:3rem 1.25rem 5rem}
+  header.hero{border-left:4px solid var(--accent); padding:.2rem 0 .2rem 1.1rem; margin-bottom:2.5rem}
+  .kicker{font-size:.78rem; letter-spacing:.09em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 .6rem}
+  h1{font-size:2rem; line-height:1.15; margin:0 0 .6rem; letter-spacing:-.01em}
+  .sub{font-size:1.12rem; color:var(--muted); margin:0}
+  h2{font-size:1.32rem; margin:2.8rem 0 .5rem; letter-spacing:-.01em; line-height:1.25}
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:.5rem; font-weight:800}
+  h3{font-size:1.02rem; margin:1.4rem 0 .3rem}
+  p{margin:.7rem 0}
+  strong{font-weight:650}
+  em{color:var(--ink)}
+  a{color:var(--accent)}
+  code{background:var(--panel); padding:.08em .35em; border-radius:4px; font-size:.86em;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .lead{font-size:1.06rem}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1.1rem 1.3rem; margin:1.6rem 0}
+  .card.tldr{background:var(--accent-soft); border-color:#cfe6dc}
+  .card h3{margin-top:0}
+  .tldr ul{margin:.4rem 0 0; padding-left:1.1rem}
+  .tldr li{margin:.42rem 0}
+  .def{border-left:4px solid var(--accent); background:var(--accent-soft); padding:.8rem 1.1rem; border-radius:0 10px 10px 0; margin:1.3rem 0; font-size:1.05rem}
+  .callout{border-left:3px solid var(--warn); background:var(--warn-soft); padding:.7rem 1rem; border-radius:0 8px 8px 0; margin:1.2rem 0; font-size:.96rem}
+  .callout b{color:var(--warn)}
+  pre{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.9rem 1.1rem; overflow-x:auto; font-size:.9rem; line-height:1.5}
+  pre code{background:none; padding:0; font-size:inherit}
+  .tablewrap{overflow-x:auto; margin:1.4rem 0; border:1px solid var(--line); border-radius:12px}
+  table{border-collapse:collapse; width:100%; min-width:44rem; font-size:.93rem}
+  th,td{text-align:left; padding:.65rem .85rem; border-bottom:1px solid var(--line); vertical-align:top}
+  thead th{background:var(--panel); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  td.k{font-weight:650; white-space:nowrap}
+  .gloss dt{font-weight:650; margin-top:.8rem}
+  .gloss dd{margin:.15rem 0 0; color:var(--muted); font-size:.95rem}
+  footer{margin-top:3rem; padding-top:1.4rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem}
+  .hr{height:1px; background:var(--line); border:0; margin:2.6rem 0}
+  @media(max-width:480px){ body{font-size:16px} h1{font-size:1.6rem} .wrap{padding:2rem 1rem 3.5rem} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="kicker">LandVault Platform · Engineering</p>
+    <h1>The Testing Stack</h1>
+    <p class="sub">The four layers we test in, what each is for, and when each runs.</p>
+  </header>
+
+  <p class="lead">Most arguments about testing are really arguments about vocabulary — people mean different
+  things by "integration test," and talk past each other. This sets out the four layers we use, the one
+  question each answers, and — because cost rises as you go up — how often each runs. The
+  <a href="contract-testing-primer.html">contract-testing primer</a> covers one layer in depth; this is the
+  wider map.</p>
+
+  <div class="card tldr">
+    <h3>In brief</h3>
+    <ul>
+      <li>Four layers — <strong>unit, contract, E2E, UAT</strong> — each answers a different question.</li>
+      <li>The first three verify we built it <em>right</em>; UAT validates we built the <em>right thing</em>.</li>
+      <li>"Correctness" is spread across the layers, and the cheap, automatable kinds sit at the bottom.</li>
+      <li>Cost rises up the stack, so frequency falls: every commit → pre-merge → post-deploy → per release.</li>
+      <li>E2E checks you can <em>get there</em> — never whether what's there is <em>correct</em>.</li>
+      <li>There is deliberately no whole-system "is everything correct" test. That's what the lower layers are for.</li>
+    </ul>
+  </div>
+
+  <h2><span class="n">1</span>The four layers</h2>
+  <p>Each layer answers exactly one question, and they get more expensive as you climb:</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Layer</th><th>The question it answers</th><th>Automated?</th><th>When it runs</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Unit</td><td>Is each component internally correct? (white-box, in isolation)</td><td>yes</td><td>every commit, liberally</td></tr>
+      <tr><td class="k">Contract (CCT)</td><td>Does each boundary honor its agreed interface? (black-box, per boundary)</td><td>yes</td><td>pre-merge gate</td></tr>
+      <tr><td class="k">E2E</td><td>Can a real user get in and reach each part of the deployed system? (black-box, whole system)</td><td>yes</td><td>post-deploy smoke</td></tr>
+      <tr><td class="k">UAT</td><td>Is it actually the <em>right thing</em> for a real user?</td><td>no — human</td><td>per release</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2><span class="n">2</span>Verification vs. validation</h2>
+  <p>The split that organizes the stack: the first three layers are <strong>verification</strong> — "did we
+  build it <em>right</em>?" Each checks a different facet: component logic, contract conformance, wiring.
+  UAT is <strong>validation</strong> — "did we build the <em>right thing</em>?", which only a human can
+  judge.</p>
+  <p>So "correct" isn't one thing owned by one layer — it's <strong>distributed</strong>, and the kinds that
+  can be automated are pushed <em>down</em> to the cheap layers. What's left for UAT is only the irreducibly
+  human part: fitness for purpose. (This is the same logic as encoding contract semantics in tiers and
+  leaving a human-reviewed residue — here applied to the whole system.)</p>
+
+  <h2><span class="n">3</span>E2E, specifically</h2>
+  <p>E2E is the layer most likely to be misunderstood, so it gets the sharpest rule. It tests one thing:
+  that the assembled, deployed system is <strong>reachable and correctly wired</strong> — that a real user
+  can get in and arrive at each part. It does <em>not</em> check whether what they find is correct.</p>
+
+  <div class="def">
+    A <strong>reachability journey</strong> is a test that a logged-in user can get to a given page and it
+    loads without erroring.
+  </div>
+  <p>And the line that keeps it honest: <em>it checks only that the page loads — never whether the content
+  is correct (that's contract and UAT).</em></p>
+
+  <p>Concretely, one looks like this:</p>
+  <pre><code>1. log in as the test user
+2. open /orders
+3. ✓ the page rendered (didn't crash, didn't bounce to login)
+4. ✓ the /api/orders call came back 200 (not 401/404/500)
+5. stop — do NOT look at what the orders actually say</code></pre>
+
+  <p>The intuition: <strong>knock on the door, check it opened, walk away.</strong> You don't go inside and
+  inspect the furniture. The same page seen through all three automated layers asks three different questions:</p>
+  <ul>
+    <li><strong>E2E:</strong> can I get to the orders page and does it load?</li>
+    <li><strong>Contract:</strong> are the orders themselves right?</li>
+    <li><strong>UAT:</strong> is the orders page actually any good for a real user?</li>
+  </ul>
+  <p>When unsure whether something is E2E's job, ask: <em>could a per-boundary test, against one
+  independently-deployable boundary, catch it?</em> If yes, it isn't E2E. If it only shows up once everything
+  is wired and deployed together — a real login actually landing you authenticated, a route resolving, a pod
+  mounting — it's E2E.</p>
+
+  <h2><span class="n">4</span>Cost drives cadence</h2>
+  <p>Cost rises as you climb, so frequency falls. Unit tests are cheap and run on every commit. Contract
+  tests gate a merge. E2E needs a deployed environment, so it runs <em>after</em> a deploy to staging, as a
+  thin smoke check. UAT costs human time and runs per release.</p>
+  <div class="callout">
+    <b>E2E is detection, not prevention.</b> Because it runs post-deploy, it tells you staging broke — it
+    doesn't stop the bad merge. Prevention lives in the layers below it (unit and contract, pre-merge). E2E
+    is the last "did the wiring actually hold in a real environment?" check before staging is promoted.
+  </div>
+
+  <h2><span class="n">5</span>The deliberate gap</h2>
+  <p>There is no automated whole-system <em>behavioral</em> test — on purpose. Behavior is decomposed down to
+  unit and contract, where it's fast and clearly owned. Good contract testing is exactly what <em>lets</em>
+  E2E stay a thin wiring check and UAT stay a small human pass, instead of both bloating into slow, flaky,
+  owner-less regression suites. The absence of that layer is a feature, not a gap.</p>
+
+  <h2><span class="n">6</span>Who owns what</h2>
+  <p>Unit belongs to the sub-system owner; contract to whichever side drives it (see the
+  <a href="contract-testing-primer.html">contract primer</a>); UAT to the UAT owner. E2E is the only layer
+  with no single boundary — it spans everything — so its ownership splits:</p>
+  <ul>
+    <li><strong>Each pod owner</strong> writes the reachability journey to <em>their own</em> pod (they know
+    its entry point and what "loaded" means).</li>
+    <li><strong>The integrator (the shell)</strong> owns the shared harness, runs the suite, and triages a
+    failure to the layer that caused it (routing → shell, didn't mount → pod, not deployed → infra).</li>
+    <li><strong>The Testing Practices coordinator</strong> owns the practice itself — the shared bar, and
+    cross-cutting concerns like the test user's identity and seed data (which no single layer owns).</li>
+  </ul>
+
+  <h2><span class="n">7</span>A note on the words</h2>
+  <p>"Integration testing" is used two different ways here, which is exactly the kind of ambiguity that
+  causes the talking-past-each-other this primer opens with. The Testing Practices charter uses "integration
+  testing" for the <em>whole-system</em> layer (what we call E2E); the contract ADRs use it for the
+  <em>per-boundary</em> layer (what we call contract / CCT). To avoid the collision, prefer the canonical
+  names: <strong>unit, contract, E2E, UAT.</strong></p>
+
+  <footer>
+    <p>This is the wider-map companion to the <a href="contract-testing-primer.html">contract-testing
+    primer</a>. The binding source of truth is governance ADRs <strong>0063–0065</strong> (the stack, the E2E
+    scope rule, E2E ownership) in the <code>landvault-governance</code> corpus. Where this primer and the ADRs
+    disagree, the ADRs win — and flag it, so we can fix the primer.</p>
+  </footer>
+
+</div>
+</body>
+</html>

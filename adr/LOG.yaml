@@ -1741,3 +1741,171 @@
         party, not a neutral steward. Neutrality among pods does not extend to
         neutrality between teams.
   related: [ADR-0005, ADR-0007, ADR-0055, ADR-0060, ADR-0061, ADR-0057, ADR-0001]
+
+- id: ADR-0063
+  status: proposed
+  date: '2026-06-20'
+  tags: [testing, strategy, stack, e2e, uat, contract, unit, cadence, conventions]
+  title: The testing stack is four layers — unit, contract, E2E, UAT — each verifying a distinct facet, with cost-driven cadence
+  decision: >
+    LandVault testing is organised as FOUR layers, each verifying a distinct
+    facet, ordered by cost:
+
+      1. UNIT — white-box; is each component internally correct? Owned by the
+         sub-system owner. Run liberally (every commit).
+      2. CONTRACT (CCT) — black-box at an ownership boundary; is the contract
+         honoured (shapes + the encodable semantics; residue human-reviewed per
+         ADR-0059)? Run as a pre-merge gate, two-level (ADR-0056..0062).
+      3. E2E — black-box of the whole assembled, deployed system; is it reachable
+         and correctly wired (ADR-0064)? A thin post-deploy canary.
+      4. UAT — human; is it the RIGHT thing for a real user? Run per release.
+
+    Two organising principles:
+      - VERIFICATION vs VALIDATION. Layers 1-3 are verification ("did we build it
+        right" — component, contract, wiring). Layer 4 is validation ("did we
+        build the right thing"). "Correctness" is therefore DISTRIBUTED, and the
+        automatable kinds are pushed DOWN to the cheap layers, leaving UAT only
+        the irreducibly human residue — the system-scale application of ADR-0059's
+        tiers.
+      - COST drives CADENCE. Cost rises up the stack, so frequency falls:
+        liberal -> pre-merge gate -> post-deploy canary -> per-release.
+
+    There is deliberately NO automated whole-system BEHAVIOURAL test: behaviour is
+    decomposed to unit + contract. Good contract testing is what lets E2E stay
+    thin (ADR-0064) and UAT stay small.
+
+    VOCABULARY (collision resolved). Canonical layer names are Unit / Contract /
+    E2E / UAT. Note two existing synonyms for "integration testing": the
+    landvault-testing charter's "integration testing" (Ashlyn, digital-platform)
+    means the E2E/system layer here; ADR-0056's "integration testing" means the
+    Contract layer. Prefer the canonical names to avoid the ambiguity.
+  because: >
+    A single shared taxonomy and a shared "tested enough to ship" bar are the
+    landvault-testing charter's central deliverable; without them four owners
+    produce four private standards and no shared confidence. The
+    verification/validation split with push-down-correctness is what keeps each
+    layer cheap and clearly owned, and is ADR-0059's tier logic at whole-system
+    scale. Cost->cadence is the organising rule for WHEN each layer runs. Naming
+    the no-whole-system-behavioural-test choice prevents the classic rot where
+    E2E becomes a slow, flaky behavioural dumping ground. Reconciling the
+    "integration testing" collision pays back exactly the definitional discipline
+    the contract cluster was built on.
+  rejected:
+    - alt: One undifferentiated test suite with no layer taxonomy.
+      because: >
+        Produces four private standards and no shared bar; behaviour leaks into
+        the slowest layers; no clean ownership.
+    - alt: Leave "integration testing" ambiguous (the existing collision).
+      because: >
+        The charter and ADR-0056 mean different things by it; an unreconciled
+        term costs precisely what the definitional discipline was meant to save.
+    - alt: A whole-system automated behavioural suite.
+      because: >
+        Slow, flaky, owner-less, and redundant with decomposed contract + unit
+        verification — the thing contracts exist to make unnecessary.
+  related: [ADR-0056, ADR-0059, ADR-0064, ADR-0065, ADR-0060, ADR-0061]
+
+- id: ADR-0064
+  status: proposed
+  date: '2026-06-20'
+  tags: [testing, e2e, reachability, smoke, scope, conventions]
+  title: E2E tests reachability only, never correctness; the unit is a reachability journey
+  decision: >
+    E2E asserts that the assembled, deployed system is REACHABLE and correctly
+    WIRED — that a real user can get in and arrive at each destination. It does
+    NOT assert behaviour or response content; those belong to Contract (CCT) and
+    Unit (ADR-0063).
+
+    The unit of E2E is the REACHABILITY JOURNEY:
+
+      A reachability journey is a test that a logged-in user can get to a given
+      page and it loads without erroring.
+
+    Scope rule (rides beside the definition): it checks only that the page loads
+    — never whether the content is correct (that is CCT and UAT). One journey =
+    one destination, so failures localise; the shared auth preamble is harness,
+    not part of any journey.
+
+    The discriminator for "is this E2E's job?": could a per-boundary test, against
+    one independently-deployable boundary, catch it? If yes -> not E2E. If it only
+    manifests once everything is wired and deployed -> E2E. Worked cases: the
+    auth/accounts API SHAPE -> Contract; "a real login actually authenticates you
+    in the deployed shell" -> E2E; "reach /api/orders and get a non-error" -> E2E;
+    "the orders payload is correct" -> Contract.
+
+    E2E is a thin POST-DEPLOY CANARY (detection), not a pre-merge gate
+    (prevention). Prevention lives in the lower layers (ADR-0063 cadence).
+  because: >
+    Reachability is binary and stable; behaviour is detailed and volatile. Put
+    behaviour in E2E and you get a slow, flaky, owner-less suite — the classic way
+    E2E dies. Confining E2E to reachability keeps it thin and meaningful, and good
+    contract testing (ADR-0056..0062) is what makes that confinement affordable,
+    because behaviour is pinned in the lower layers. A sharp positive definition
+    plus the "could a boundary test catch it?" discriminator is what stops scope
+    creep.
+  rejected:
+    - alt: E2E asserts behaviour / response content too.
+      because: >
+        Duplicates contract tests, couples to seed data, and buries behaviour in
+        the slowest, most environment-dependent layer. The rot.
+    - alt: E2E as a pre-merge gate.
+      because: >
+        It needs a deployed environment; it is detection, not prevention.
+        Pre-merge prevention is unit + contract.
+  related: [ADR-0056, ADR-0063, ADR-0065, ADR-0059]
+
+- id: ADR-0065
+  status: proposed
+  date: '2026-06-20'
+  tags: [testing, e2e, ownership, steward, integrator, test-data, conventions]
+  title: E2E is authored per-destination, run by the integrator, and its practice (incl. test-world) is owned by the Testing Practices PM
+  decision: >
+    E2E ownership decomposes along the ADR-0061 authorship/execution axes, because
+    E2E is the only layer with no single boundary owner:
+
+      - AUTHORSHIP — distributed. Each pod owner authors the reachability journey
+        to their OWN pod (they define its entry point and what "loaded" means).
+        The integrator (shell) authors the cross-cutting journeys (login, boot).
+      - EXECUTION — centralised at the integrator (shell): it owns the harness,
+        runs the suite, and TRIAGES failures to the responsible layer (routing ->
+        shell, mount -> pod, deploy -> infra). This is ADR-0062's integrator-
+        steward role applied to E2E.
+      - PRACTICE / STANDARD — owned by the Testing Practices PM (landvault-testing
+        charter, the "Overall practice / coordination" role, §5/§10: coherence,
+        shared bar, gap-filling). NOT a separate QA function.
+
+    CROSS-CUTTING TEST INFRASTRUCTURE — test identity and seed data ("what world
+    the test user lives in") — is a GAP owned by the Testing Practices PM, not by
+    any single layer owner. It is shared across the integration, data, and UAT
+    layers and reaches into accounts/infra provisioning, so it is "a gap not owned
+    by the other three" — that role's explicit charter mandate. The substantive
+    decision (a dedicated test org with owned seed data vs riding shared staging
+    data; who provisions identity/access) is ROUTED to that role, not made here.
+
+    (The roles cited live in the landvault-testing charter, currently Status:
+    Draft — pending sponsor approval; these references ratify together with it.)
+  because: >
+    E2E spans the shell, every pod, every BFF, and infra, so it has no boundary
+    owner — the authorship/execution split (ADR-0061) resolves that without a
+    central QA bottleneck. Pod owners alone know their own reachability; the
+    integrator already owns composition (ADR-0001/0007) and the gate (ADR-0062),
+    so it is the natural runner and triager. Test identity/seed-data is shared
+    across layers and is precisely the charter's "gap-filling/coherence" mandate;
+    a layer owner being BLOCKED on it (as the integration owner currently is) is
+    the signal it belongs one level up. A central QA function owning E2E would
+    recreate the over-the-wall anti-pattern rejected for contracts (ADR-0058/0059)
+    — lacking context and becoming a queue.
+  rejected:
+    - alt: The integrator (shell) owns all of E2E, including every pod's journey.
+      because: >
+        Makes the shell accountable for pods it does not control, and a
+        bottleneck. The harness yes; the per-pod journeys belong to pod owners.
+    - alt: A central QA team owns the E2E suite.
+      because: >
+        The over-the-wall anti-pattern. The steward owns the PRACTICE; the people
+        who own the code own the tests.
+    - alt: Each layer owner solves test-identity / seed-data independently.
+      because: >
+        A shared concern fragmented into private solutions. The coordination role
+        owns it precisely because it spans layers.
+  related: [ADR-0061, ADR-0062, ADR-0063, ADR-0064, ADR-0001, ADR-0007]
